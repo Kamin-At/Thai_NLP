@@ -146,7 +146,8 @@ class Text_processing():
     
     vectorizer = TfidfVectorizer(tokenizer=self.tokenize, 
                                  ngram_range= n_gram_range,
-                                 sublinear_tf=True)
+                                 sublinear_tf=True,
+                                 min_df=0.005)
     X = vectorizer.fit_transform(texts)
     #visualize texts
     #from visualize import top_feats_all, plot_top_feats
