@@ -17,8 +17,8 @@ class Text_processing():
                max_len: '(int) max number of tokens per sample',
                min_len: '(int) min number of tokens per sample',
                min_len_character: '(int) min number of characters per token' = 1, #recommend > 0 or 1 to automatically clear white spaces and error from the tokenizer 
-               do_padding: '(bool) use "-PAD-" to pad the sentenses until their length is equal to max_len' = False,
-               return_mask: '(bool) if True also return list of booleans indicating where the -PAD- is (True for real tokens and False for -PAD- token)' = False,
+              #  do_padding: '(bool) use "-PAD-" to pad the sentenses until their length is equal to max_len' = False,
+              #  return_mask: '(bool) if True also return list of booleans indicating where the -PAD- is (True for real tokens and False for -PAD- token)' = False,
               #  rules_before_tokenization: '(Collection[function(str)]) Collection of functions taking sentence-level input string' = None,
               #  rules_after_tokenization: '(Collection[function(list[str])]) Collection of functions taking list of tokens' = None,
               #  stopwords: '(set[string]) set of stopwords' = {},
@@ -35,9 +35,9 @@ class Text_processing():
     self.rules_before_tokenization = rules_before_tokenization
     # self.stopwords = stopwords
     self.engine = engine
-    self.do_padding = do_padding
+    # self.do_padding = do_padding
     self.verbose = verbose
-    self.return_mask = return_mask
+    # self.return_mask = return_mask
 
     #you can freely define additional words, unwanted words and stopwords using 1 word per line in each corresponding file
 
@@ -87,7 +87,9 @@ class Text_processing():
     return texts
 
   def preprocessing(self,
-                    texts: '(Collection[str]): list of input strings'
+                    texts: '(Collection[str]): list of input strings',
+                    do_padding: '(bool) use padding or not' = False,
+                    return_mask: '(bool) use mask for padding tokens or not' = False
                     )-> 'if return_mask is True list[tuple(list[str], list[bool])] else list[list[str]]':
     Data = []
     for ind, text in enumerate(texts):
@@ -101,7 +103,7 @@ class Text_processing():
         mask = [True] * self.max_len
 
       else:
-        if self.do_padding:
+        if do_padding:
           mask = [True] * len(text) + [False] * (self.max_len - len(text))
           for _ in range(len(text), self.max_len):
             text.append('-PAD-')
@@ -109,7 +111,7 @@ class Text_processing():
         if ind % 5 == 0:
           print(f'text after preprocessing: {text}')
           print('----------------------------------')
-      if self.return_mask:
+      if return_mask:
         Data.append((text, mask))
       else:
         Data.append(text)
