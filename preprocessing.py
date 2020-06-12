@@ -140,14 +140,15 @@ class Text_processing():
   def visualize_important_words(self,
                                 texts: '(Collection[str]) Collection of raw sentence-level texts',
                                 labels: '(Collection[str]) Collection of labels ==> dont need to turn into enumerated or one-hot vectors',
-                                n_gram_range: '(tuple[int, int]) tuple of (min_n_gram_size, max_n_gram_size)' = (1,2)
+                                n_gram_range: '(tuple[int, int]) tuple of (min_n_gram_size, max_n_gram_size)' = (1,2),
+                                min_df: '(int or float) we consider only the word that existes for min_df doccuments and percent from 0-1 for float' = 1
                                 ) -> '(list[pd.DataFrame]) ==> length equals to number of unique labels':
     ## this method uses score ranking from tf-idf feature to see usefulness of each words ##
     
     vectorizer = TfidfVectorizer(tokenizer=self.tokenize, 
                                  ngram_range= n_gram_range,
                                  sublinear_tf=True,
-                                 min_df=0.005)
+                                 min_df=min_df)
     X = vectorizer.fit_transform(texts)
     #visualize texts
     #from visualize import top_feats_all, plot_top_feats
