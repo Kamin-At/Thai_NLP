@@ -15,8 +15,15 @@ def prepare_data_for_text_classification(
     train_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
     test_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
     max_len: '(int) max length of all sentences (shorter sentences will be padded, longer sentences will be truncated)',
-    min_len: '(int) min number of tokens per sample ==> if less than min_len, we drop that sample'):
-    WE = Word_Embedder('fasttext', max_len)
+    min_len: '(int) min number of tokens per sample ==> if less than min_len, we drop that sample',
+    n_gram_range: '(tuple[int,int]) (min_n_gram, max_n_gram)' = (1,3),
+    min_df: '(int) consider only tokens which exist greater of equal to min_df documents'=5,
+    engine: '(str) engine to be used for word embedding' = 'fasttext'
+    ):
+    d = tp.visualize_important_words(train_dataframe['texts'],train_dataframe['labels'],n_gram_range,min_df)
+    train_tf = tp.tfxidf_encode(train_dataframe['texts'])
+    test_tf = tp.tfxidf_encode(test_dataframe['texts'])
+    WE = Word_Embedder(engine, max_len)
     print(train_dataframe['labels'].value_counts())
     u_label = {}
     for ind, i in enumerate(train_dataframe['labels'].value_counts().index):
@@ -25,9 +32,7 @@ def prepare_data_for_text_classification(
     tp = Text_processing(max_len, min_len)
     out = tp.preprocessing(train_dataframe['texts'], train_dataframe['labels'], u_label, True, True)
     out2 = tp.preprocessing(test_dataframe['texts'], test_dataframe['labels'], u_label, True, True)
-    d = tp.visualize_important_words(train_dataframe['texts'],train_dataframe['labels'],(1,3),5)
-    train_tf = tp.tfxidf_encode(train_dataframe['texts'])
-    test_tf = tp.tfxidf_encode(test_dataframe['texts'])
+    
     tmp_label_train = np.argmax(out[1],axis=1)
     CW = compute_class_weight('balanced', np.unique(tmp_label_train), tmp_label_train)
     CW2 = {}
@@ -121,7 +126,7 @@ class Text_classification():
     print('running 5-fold cv')
     parameters = {'C':[0.001, 0.01, 0.5, 0.1, 1, 5, 10, 100]}   
     model = LogisticRegression(penalty="l2", solver="liblinear", dual=False, multi_class="ovr", class_weight='balanced')
-    clf = GridSearchCV(model, parameters, scoring= 'f1_micro', return_train_score= True)
+    clf = GridSearchCV(model, parameters, scoring= 'f1_macro', return_train_score= True)
     out = clf.fit(self.tfxidf_train.toarray(), self.label_train)
     best_c = out.best_params_['C']
     model = LogisticRegression(C=best_c, penalty="l2", solver="liblinear", dual=False, multi_class="ovr", class_weight='balanced')
@@ -184,4 +189,3 @@ class Text_classification():
     plt.plot(hist.history['val_loss'], label='Val_loss')
     plt.grid()
     plt.show()
-    
