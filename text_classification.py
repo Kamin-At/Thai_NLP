@@ -4,12 +4,17 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import f1_score, confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
 import seaborn as sns
+import os
 import tensorflow.keras as keras
 import matplotlib.pyplot as plt
 import numpy as np
+from joblib import dump, load
+import json
 
 from preprocessing import Word_Embedder
 from preprocessing import Text_processing
+
+
 
 def prepare_data_for_text_classification(
     train_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
@@ -18,22 +23,26 @@ def prepare_data_for_text_classification(
     min_len: '(int) min number of tokens per sample ==> if less than min_len, we drop that sample',
     n_gram_range: '(tuple[int,int]) (min_n_gram, max_n_gram)' = (1,3),
     min_df: '(int) consider only tokens which exist greater of equal to min_df documents'=5,
-    engine: '(str) engine to be used for word embedding' = 'fasttext'
+    word_embedder: '(str) engine to be used for word embedding' = 'fasttext',
+    tfxidf_path: '(str) path to save the tf-idf model'= 'tf-idf_encoder',
+    engine: '(str) engine used for word tokenization' = 'newmm'
     ):
-    d = tp.visualize_important_words(train_dataframe['texts'],train_dataframe['labels'],n_gram_range,min_df)
+    tp = Text_processing(max_len, min_len,engine=engine)
+    d = tp.visualize_important_words(train_dataframe['texts'],train_dataframe['labels'],n_gram_range,min_df, tfxidf_path= tfxidf_path)
     train_tf = tp.tfxidf_encode(train_dataframe['texts'])
     test_tf = tp.tfxidf_encode(test_dataframe['texts'])
-    WE = Word_Embedder(engine, max_len)
+    WE = Word_Embedder(word_embedder, max_len)
     print(train_dataframe['labels'].value_counts())
     u_label = {}
     for ind, i in enumerate(train_dataframe['labels'].value_counts().index):
         u_label[i] = ind
     #print(u_label)
-    tp = Text_processing(max_len, min_len)
+    
     out = tp.preprocessing(train_dataframe['texts'], train_dataframe['labels'], u_label, True, True)
     out2 = tp.preprocessing(test_dataframe['texts'], test_dataframe['labels'], u_label, True, True)
-    
+    # print(out[1][:100])
     tmp_label_train = np.argmax(out[1],axis=1)
+
     CW = compute_class_weight('balanced', np.unique(tmp_label_train), tmp_label_train)
     CW2 = {}
     for i in range(CW.shape[0]):
@@ -44,7 +53,7 @@ def prepare_data_for_text_classification(
     return {
         'unique_label': u_label, 'max_len': max_len, 'embedding_size': WE.get_embedding_size(), 'tfxidf_train': train_tf, 
         'tfxidf_label_train': train_dataframe['labels'], 'tfxidf_test': test_tf, 'tfxidf_label_test': test_dataframe['labels'],
-        'tf_train_dataset': x, 'tf_test_dataset': x2, 'class_weight': CW2
+        'tf_train_dataset': x, 'tf_test_dataset': x2, 'class_weight': CW2, 'min_len': min_len, 'engine': engine, 'word_embedder':word_embedder
         }
     #tc =Text_classification(u_label,max_len,WE.get_embedding_size(),True,True,False,train_tf,train_dataframe['labels'],test_tf,test_dataframe['labels'],x,x2)
 
@@ -57,7 +66,8 @@ class Text_classification():
                prepared_data_dict: '(dict) output of prepare_data_for_text_classification()',
                do_deep_learning: '(bool) if True ==> use bi-GRU to predict'=True,
                do_linear_classifier: '(bool) if True ==> use linear classifier with TF-IDF features'=True,
-               is_sequence_prediciton: '(bool) if True ==> Ex. NER, else ==> Ex. Sentiment Analysis'=False
+               is_sequence_prediciton: '(bool) if True ==> Ex. NER, else ==> Ex. Sentiment Analysis'=False,
+               model_path: '(str) folder name which will be created in "trained_models" folder' = 'text_classification'
                ):
             #    tfxidf_train: '(np.array) (for do_linear_classifier) from TfidfVectorizer.fit or .fit_transform'=None,
             #    label_train: '(Collection[str]) (for do_linear_classifier) Ex. ["angry", "happy", "angry",....]'=None,
@@ -67,6 +77,9 @@ class Text_classification():
             #    tf_test_dataset: '(tf.dataset) from Word_Embedder class'= None):
 
     self.max_len = prepared_data_dict['max_len']
+    self.min_len = prepared_data_dict['min_len']
+    self.word_embedder = prepared_data_dict['word_embedder']
+    self.engine = prepared_data_dict['engine']
     self.num_feature_per_word = prepared_data_dict['embedding_size']
     self.class_dict = prepared_data_dict['unique_label']
     self.do_deep_learning = do_deep_learning
@@ -80,6 +93,22 @@ class Text_classification():
     self.tf_test_dataset = prepared_data_dict['tf_test_dataset']
     self.dl_model = None
     self.class_weight = prepared_data_dict['class_weight']
+    self.model_path = os.path.join('trained_models',model_path)
+    self.config = {
+      'max_len': self.max_len, 
+      'embedding_size': self.num_feature_per_word,
+      'class_dict': self.class_dict,
+      'is_sequence_prediction': self.is_sequence_prediciton,
+      'min_len': self.min_len,
+      'word_embedder': self.word_embedder,
+      'engine': self.engine
+      }
+    
+    os.makedirs(self.model_path, exist_ok =True) 
+    print(f'Created the path: {self.model_path}')
+    with open(os.path.join(self.model_path,'model_config.json'), 'w', encoding='utf-8') as file:
+      json.dump(self.config, file)
+
 
     if do_deep_learning:
       self.dl_model = self.cre_deep_learning_model()
@@ -87,8 +116,8 @@ class Text_classification():
     
   def cre_deep_learning_model(
       self,
-      dropout_dense=0.35,
-      dropout_gru=0.35,
+      dropout_dense=0.4,
+      dropout_gru=0.4,
       gru_size=128,
       num_gru_layer=2,
       num_dense_layer=3,
@@ -131,12 +160,13 @@ class Text_classification():
     best_c = out.best_params_['C']
     model = LogisticRegression(C=best_c, penalty="l2", solver="liblinear", dual=False, multi_class="ovr", class_weight='balanced')
     model.fit(self.tfxidf_train.toarray(), self.label_train)
+    dump(model, os.path.join(self.model_path, 'logistic_regression_model.joblib'))
     y_pred = model.predict(self.tfxidf_test.toarray())
     out = f1_score(self.label_test,y_pred,average=None)
     print(f'Best C: {best_c}, Best f1-scores: {out}')
 
     conf_mat = confusion_matrix(self.label_test,y_pred)
-    print(model.score(self.tfxidf_test.toarray(),self.label_test))
+    print(f'Unweighted f1-score: {np.mean(out)}, Weighted f1-score: {f1_score(self.label_test,y_pred,average="weighted")}')
     sns.heatmap(conf_mat, annot=True, fmt="d",
                 xticklabels=model.classes_, yticklabels=model.classes_)
     plt.ylabel("Actual")
@@ -146,12 +176,15 @@ class Text_classification():
   def eval_dl_text_classification(self):
     y_pred = []
     y_true = []
-    for i in self.tf_test_dataset.as_numpy_iterator():
+    for ind, i in enumerate(self.tf_test_dataset.as_numpy_iterator()):
         # print(i)
         tmp_out = self.dl_model.predict(i[0])
         y_pred += list(np.argmax(tmp_out, axis=1))
         y_true += list(np.argmax(i[1], axis=1))
-
+        if ind == 0:
+          count_classes = np.sum(i[1], axis=0)
+        else:
+          count_classes += np.sum(i[1], axis=0)
     conf_mat = confusion_matrix(y_true, y_pred)
     print(conf_mat)
     r = np.sum(conf_mat,axis=1)
@@ -164,18 +197,19 @@ class Text_classification():
     z2 = np.divide(ww, p)
     f1s = 2*(z1*z2)/(z1+z2)
     print(f1s)
-    print(f'Macro f1-score: {np.mean(f1s)}')
+    print(f'Unweighted f1-score: {np.mean(f1s)}, Weighted f1-score: {np.sum(f1s*count_classes)/np.sum(count_classes)}')
+
 
   def fit_deep_learning(self):
-    MC = keras.callbacks.ModelCheckpoint('DL_model', monitor="val_loss",verbose=0,save_best_only=True)
+    MC = keras.callbacks.ModelCheckpoint( os.path.join(self.model_path, 'deeplearning_model'), monitor="val_loss",verbose=0,save_best_only=True)
     RP = keras.callbacks.ReduceLROnPlateau(monitor="loss",factor=0.1,min_lr=1e-6, patience=4)
     ES = keras.callbacks.EarlyStopping(monitor="val_loss",min_delta=0,patience=7,restore_best_weights=True)
     if self.is_sequence_prediciton:
-        self.dl_model.compile(optimizer="adam",loss='CategoricalCrossentropy')
+        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.004, amsgrad=True),loss='CategoricalCrossentropy')
     else:
         P = keras.metrics.Precision()
         R = keras.metrics.Recall()
-        self.dl_model.compile(optimizer="adam",loss='CategoricalCrossentropy', metrics= [P,R])
+        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.004, amsgrad=True),loss='CategoricalCrossentropy', metrics= [P,R])
     hist = self.dl_model.fit(
       self.tf_train_dataset, 
       validation_data = self.tf_test_dataset, 
@@ -189,3 +223,69 @@ class Text_classification():
     plt.plot(hist.history['val_loss'], label='Val_loss')
     plt.grid()
     plt.show()
+
+class Text_classification_for_prediction():
+  def __init__(
+    self,
+    path_to_tfxidf: '(str) path to tf-idf model (.joblib extension)',
+    model_path: '(str) path to the folder created by "Text_classification". it may contain both logistic and deep learning models or just one of them'):
+    self.tfxidf_model = load(path_to_tfxidf)
+    self.model_path = model_path
+    self.logistic_regression_model = None
+    self.deeplearning_model = None
+    
+    cur_path = os.getcwd()
+    try:
+      os.chdir(model_path)
+    except:
+      raise Exception(f"Wrong model path: {model_path}")
+    Dirs = os.listdir()
+    if len(Dirs) != 3:
+      raise Exception(f"The model path: {model_path} should sotre only 1 folder for deeplearning model and 1 .joblib extension for logistic regression model and 1 .json extension for the model config")
+    for Dir in Dirs:
+      if '.json' in Dir:
+        continue
+      if 'joblib' == Dir.split('.')[-1]:
+        print('loading logistic regression model')
+        self.logistic_regression_model = load(Dir) 
+      else:
+        print('loading deeplearning model')
+        self.deeplearning_model = keras.models.load_model(Dir)
+    os.chdir(cur_path)
+    with open(os.path.join(self.model_path,'model_config.json'), 'r', encoding='utf-8') as fh:
+      self.config = json.load(fh)
+    self.class_mapping = {y:x for x,y in self.config['class_dict'].items()}
+    if self.deeplearning_model:
+      print('loading the embedder and tokenizer')
+      self.tp = Text_processing(self.config['max_len'],self.config['min_len'], engine=self.config['engine'])
+      self.WE = Word_Embedder(self.config['word_embedder'], self.config['max_len'],is_sequence_prediction=self.config['is_sequence_prediction'])
+  
+  def predict(
+    self,
+    text: '(str) raw sentence-level string'):
+    outputs = {}
+    if self.logistic_regression_model:
+      vectorized_sentences = self.tfxidf_model.transform([text])
+      y_pred = self.logistic_regression_model.predict_proba(vectorized_sentences)
+      # print(f'logistic y_pred: {y_pred}')
+      probas = {}
+      for i in range(y_pred.shape[1]):
+        probas[self.logistic_regression_model.classes_[i]] = y_pred[0,i]
+      outputs['logistic_regression'] = probas
+    if self.deeplearning_model:
+      tokenized_sentence, masks = self.tp.preprocessing([text], None, None, do_padding=True, return_mask=True)
+      tokenized_sentence = tokenized_sentence[0]
+      masks = masks[0]
+      # print(f'tokenized sentence: {tokenized_sentence}')
+      vectorized_words = np.reshape(self.WE.encode(tokenized_sentence), (1,self.config['max_len'], self.config['embedding_size']))
+      masks = np.reshape(masks, (1, self.config['max_len']))
+      
+      y_pred = self.deeplearning_model.predict((vectorized_words, masks))
+      # print(f'dl y_pred: {y_pred}')
+      probas = {}
+      for i in range(y_pred.shape[1]):
+        probas[self.class_mapping[i]] = y_pred[0,i]
+      outputs['deeplearning'] = probas
+    return outputs
+    
+

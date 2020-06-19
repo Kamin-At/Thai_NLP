@@ -8,6 +8,7 @@ import pandas as pd
 import os
 import tensorflow as tf
 import tensorflow.keras as keras
+from joblib import dump, load
 
 #from configurable sources
 from encoders import registered_encoders
@@ -26,7 +27,7 @@ class Text_processing():
               #  rules_after_tokenization: '(Collection[function(list[str])]) Collection of functions taking list of tokens' = None,
               #  stopwords: '(set[string]) set of stopwords' = {},
                engine: '(str) engine used to tokenize sentences see: https://thainlp.org/pythainlp/docs/2.0/api/tokenize.html' = 'newmm',
-               verbose: '(bool) if True print some comparisons of before and after processing texts' = False,
+               verbose: '(bool) if True print some comparisons of before and after processing texts' = False
               #  additional_words: '(Collection[str]) Collection of words to "add" into the dictionary **ducplicated words will be eliminated automatically**' = {},
               #  unwanted_words: '(Collection[str]) Collection of words to "remove" into the dictionary **ducplicated words will be eliminated automatically**' = {}
                ):
@@ -92,14 +93,19 @@ class Text_processing():
 
   def preprocessing(self,
                     texts: '(Collection[str]): list of input strings',
-                    labels: '(Collection[str]): list of labels',
+                    labels: '(Collection[str] or None): list of labels',
                     label_dict: '(dict[str: int]) the key is for label names, the values is for int ranging from 0 to num unique label - 1',
                     do_padding: '(bool) use padding or not' = False,
                     return_mask: '(bool) use mask for padding tokens or not' = False
                     )-> 'if return_mask is True list[tuple(list[str], list[bool])] else list[list[str]]':
     text_out = []
     mask_out = []
-    label_out = []
+    try:
+      labels = list(labels)
+    except:
+      pass
+    if labels:
+      label_out = []
     for ind, text in enumerate(texts):
 
       if self.verbose:
@@ -126,13 +132,19 @@ class Text_processing():
       
       text_out.append(text)
       mask_out.append(mask)
-      label_out.append(label_dict[labels[ind]])
-    label_out = keras.utils.to_categorical(label_out, num_classes=len(label_dict))
-    
-    if return_mask:
-      return ((text_out, mask_out), label_out)
+      if labels:
+        label_out.append(label_dict[labels[ind]])
+    if labels:
+      label_out = keras.utils.to_categorical(label_out, num_classes=len(label_dict))
+      if return_mask:
+        return ((text_out, mask_out), label_out)
+      else:
+        return (text_out, label_out)
     else:
-      return (text_out, label_out)
+      if return_mask:
+        return (text_out, mask_out)
+      else:
+        return text_out
   
   def tokenize(self,
                text: '(str) sentence-level string to be tokenized'
@@ -160,7 +172,8 @@ class Text_processing():
                                 texts: '(Collection[str]) Collection of raw sentence-level texts',
                                 labels: '(Collection[str]) Collection of labels ==> dont need to turn into enumerated or one-hot vectors',
                                 n_gram_range: '(tuple[int, int]) tuple of (min_n_gram_size, max_n_gram_size)' = (1,2),
-                                min_df: '(int or float) we consider only the word that existes for min_df doccuments and percent from 0-1 for float' = 1
+                                min_df: '(int or float) we consider only the word that existes for min_df doccuments and percent from 0-1 for float' = 1,
+                                tfxidf_path: '(str) path to save the tf-idf model'= 'tfxidf_encoder'
                                 ) -> '(list[pd.DataFrame]) ==> length equals to number of unique labels':
     ## this method uses score ranking from tf-idf feature to see usefulness of each words ##
     
@@ -169,6 +182,7 @@ class Text_processing():
                                  sublinear_tf=True,
                                  min_df=min_df)
     X = vectorizer.fit_transform(texts)
+    dump(vectorizer, os.path.join('trained_models\\', tfxidf_path + '.joblib'))
     #visualize texts
     #from visualize import top_feats_all, plot_top_feats
     #code from pythainlp
@@ -278,6 +292,14 @@ class Word_Embedder():
       data = data.shuffle(batch_size*5).prefetch(AUTO).batch(batch_size)
     return data
   
+  def encode(
+    self,
+    words: '(Collection[str]) collection of tokens ==> in case of prediction, padding is required'):
+    out = []
+    for word in words:
+      out.append(self.encode_function(self.model, word))
+    return np.stack(out)
+
   def get_embedding_size(self):
     return self.encode_size
     
