@@ -201,15 +201,17 @@ class Text_classification():
 
 
   def fit_deep_learning(self):
-    MC = keras.callbacks.ModelCheckpoint( os.path.join(self.model_path, 'deeplearning_model'), monitor="val_loss",verbose=0,save_best_only=True)
+    cur_path = os.getcwd()
+    os.chdir(self.model_path)
+    MC = keras.callbacks.ModelCheckpoint( 'deeplearning_model.h5', monitor="val_loss",verbose=0,save_best_only=True)
     RP = keras.callbacks.ReduceLROnPlateau(monitor="loss",factor=0.1,min_lr=1e-6, patience=4)
     ES = keras.callbacks.EarlyStopping(monitor="val_loss",min_delta=0,patience=7,restore_best_weights=True)
     if self.is_sequence_prediciton:
-        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.004, amsgrad=True),loss='CategoricalCrossentropy')
+        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.002, amsgrad=True),loss='CategoricalCrossentropy')
     else:
         P = keras.metrics.Precision()
         R = keras.metrics.Recall()
-        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.004, amsgrad=True),loss='CategoricalCrossentropy', metrics= [P,R])
+        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.002, amsgrad=True),loss='CategoricalCrossentropy', metrics= [P,R])
     hist = self.dl_model.fit(
       self.tf_train_dataset, 
       validation_data = self.tf_test_dataset, 
@@ -223,7 +225,7 @@ class Text_classification():
     plt.plot(hist.history['val_loss'], label='Val_loss')
     plt.grid()
     plt.show()
-
+    os.chdir(cur_path)
 class Text_classification_for_prediction():
   def __init__(
     self,
