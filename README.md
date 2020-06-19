@@ -1,10 +1,14 @@
+## First of all
+- download the pretrained fasttext model from https://fasttext.cc/docs/en/crawl-vectors.html (download .bin extension not the text)
+- create a folder named "encoders", and place the fasttext model (use original file name "cc.th.300.bin") in the folder.
+
 ## To train a model for text-classification
 ### Step 1. Inputs
 ### pandas dataframes which contain fields as following
 - 'texts' field is 1 sample (raw sentence-level string) per row ==> no need to do any preprocessing (there is a number of default built-in preprocessing steps). If you want to insert or use some custom preprocessing step, define them in preprocessing_function.py and call them in preprocessing_rules.py. There are 3 main steps for the text-preprocessing.
-  - Preprocessing before word tokenization: the defined functions recieve only a plain-text (string) and return a string. Example function: URL removing, repeating word removing.
-  - Word tokenization: we mainly use 'newmm' algorithm as the defualt due to its flexibility and time complexity ==> easy to add new words and fast for large scale tokenization. For other tokenizing algorithms, please see the engine options from https://thainlp.org/pythainlp/docs/2.0/api/tokenize.html
-  - Preprocessing after word tokenization: the defined functions recieve only a list of string (list of tokens) and return a lis of tokens. Example function: stopword removing, whitespace removing.
+ - Preprocessing before word tokenization: the defined functions recieve only a plain-text (string) and return a string. Example function: URL removing, repeating word removing.
+ - Word tokenization: we mainly use 'newmm' algorithm as the defualt due to its flexibility and time complexity ==> easy to add new words and fast for large scale tokenization. For other tokenizing algorithms, please see the engine options from https://thainlp.org/pythainlp/docs/2.0/api/tokenize.html
+ - Preprocessing after word tokenization: the defined functions recieve only a list of string (list of tokens) and return a lis of tokens. Example function: stopword removing, whitespace removing.
 
 - 'labels' field is 1 label (string) per sample
 
