@@ -121,7 +121,7 @@ class Text_classification():
       gru_size=128,
       num_gru_layer=2,
       num_dense_layer=3,
-      WR = 1e-3):
+      WR = 0.):
     L2 = keras.regularizers.l2(WR)
     inputs = keras.Input(shape=(self.max_len,self.num_feature_per_word), name='word_vectors')
     masks = keras.Input(shape=(self.max_len),dtype=np.dtype(bool), name='masks')
@@ -207,11 +207,11 @@ class Text_classification():
     RP = keras.callbacks.ReduceLROnPlateau(monitor="loss",factor=0.1,min_lr=1e-6, patience=4)
     ES = keras.callbacks.EarlyStopping(monitor="val_loss",min_delta=0,patience=7,restore_best_weights=True)
     if self.is_sequence_prediciton:
-        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.002, amsgrad=True),loss='CategoricalCrossentropy')
+        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001, amsgrad=True),loss='CategoricalCrossentropy')
     else:
         P = keras.metrics.Precision()
         R = keras.metrics.Recall()
-        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.002, amsgrad=True),loss='CategoricalCrossentropy', metrics= [P,R])
+        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001, amsgrad=True),loss='CategoricalCrossentropy', metrics= [P,R])
     hist = self.dl_model.fit(
       self.tf_train_dataset, 
       validation_data = self.tf_test_dataset, 
@@ -226,6 +226,7 @@ class Text_classification():
     plt.grid()
     plt.show()
     os.chdir(cur_path)
+
 class Text_classification_for_prediction():
   def __init__(
     self,
@@ -250,7 +251,7 @@ class Text_classification_for_prediction():
       if 'joblib' == Dir.split('.')[-1]:
         print('loading logistic regression model')
         self.logistic_regression_model = load(Dir) 
-      else:
+      elif 'h5' == Dir.split('.')[-1]:
         print('loading deeplearning model')
         self.deeplearning_model = keras.models.load_model(Dir)
     os.chdir(cur_path)
