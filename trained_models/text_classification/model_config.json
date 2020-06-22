@@ -1,0 +1,1 @@
+{"max_len": 64, "embedding_size": 300, "class_dict": {"billing and payment": 0, "promotions": 1, "other queries": 2, "internet": 3, "international dialing": 4, "true money": 5, "lost and stolen": 6}, "is_sequence_prediction": false, "min_len": 1, "word_embedder": "fasttext", "engine": "newmm"}

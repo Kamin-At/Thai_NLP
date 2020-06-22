@@ -106,6 +106,7 @@ class Text_processing():
       pass
     if labels:
       label_out = []
+    ind_drop = []
     for ind, text in enumerate(texts):
 
       if self.verbose:
@@ -114,6 +115,7 @@ class Text_processing():
       text = self.get_preprocessed_words(text)
       
       if len(text) < self.min_len:
+        ind_drop.append(ind)
         continue
       elif len(text) > self.max_len:
         text = text[:self.max_len]
@@ -137,14 +139,14 @@ class Text_processing():
     if labels:
       label_out = keras.utils.to_categorical(label_out, num_classes=len(label_dict))
       if return_mask:
-        return ((text_out, mask_out), label_out)
+        return ((text_out, mask_out), label_out, ind_drop)
       else:
-        return (text_out, label_out)
+        return (text_out, label_out, ind_drop)
     else:
       if return_mask:
-        return (text_out, mask_out)
+        return (text_out, mask_out, ind_drop)
       else:
-        return text_out
+        return text_out, ind_drop
   
   def tokenize(self,
                text: '(str) sentence-level string to be tokenized'
