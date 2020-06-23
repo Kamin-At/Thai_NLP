@@ -11,9 +11,28 @@ import matplotlib.pyplot as plt
 import numpy as np
 from joblib import dump, load
 import json
+import pandas as pd
 
 from preprocessing import Word_Embedder
 from preprocessing import Text_processing
+
+class count_based_model():
+  def __init__(
+    self,
+    filename_dict: '(dict[str: collection[str]]) example: {"Negative class": ["neg.txt", "neg_manual.txt"], "Positive class": ["pos.txt"]}'):
+    self.class_dictionary = {}
+    for tmp_class in filename_dict:
+      self.class_dictionary[tmp_class] = set()
+      for tmp_file in filename_dict[tmp_class]:
+        with open(tmp_file, 'r', encoding='utf8') as f:
+          for word in f:
+            word = word.strip()
+            if word != '':
+              word = ''.join(word.split(' '))
+              self.class_dictionary[tmp_class].add(word)
+    
+    
+
 
 
 
@@ -26,10 +45,21 @@ def prepare_data_for_text_classification(
     min_df: '(int) consider only tokens which exist greater of equal to min_df documents'=5,
     word_embedder: '(str) engine to be used for word embedding' = 'fasttext',
     tfxidf_path: '(str) path to save the tf-idf model'= 'tf-idf_encoder',
-    engine: '(str) engine used for word tokenization' = 'newmm'
+    engine: '(str) engine used for word tokenization' = 'newmm',
+    threshold_tfxidf: '(float) consider words which correspond to each class' = 0.01
     ):
     tp = Text_processing(max_len, min_len,engine=engine)
     d = tp.visualize_important_words(train_dataframe['texts'],train_dataframe['labels'],n_gram_range,min_df, tfxidf_path= tfxidf_path)
+    cur_path = os.getcwd()
+    os.chdir('word_configs')
+    for i in d:
+      tmp_class = i.iloc[0]['label']
+      i = i[i['score']> threshold_tfxidf]
+      with open(tmp_class + '.txt', 'w', encoding='utf8') as f:
+        for j in i['feature']:
+          f.write(j+'\n')
+    os.chdir(cur_path)
+
     train_tf = tp.tfxidf_encode(train_dataframe['texts'])
     test_tf = tp.tfxidf_encode(test_dataframe['texts'])
     WE = Word_Embedder(word_embedder, max_len)
@@ -49,9 +79,9 @@ def prepare_data_for_text_classification(
     for i in range(CW.shape[0]):
       CW2[i] = CW[i]
     print(f'CW2: {CW2}')
-    x = WE.cre_tf_dataset(False, max_len, out[0][0], out[0][1], out[1], len(u_label))
-    x2 = WE.cre_tf_dataset(True, max_len, out2[0][0], out2[0][1], out2[1], len(u_label))
-    x3 = WE.cre_tf_dataset(True, max_len, out[0][0], out[0][1], out[1], len(u_label))
+    x = WE.cre_tf_dataset(is_testset = False, batch_size=64, texts=out[0][0], masks=out[0][1], labels=out[1])
+    x2 = WE.cre_tf_dataset(is_testset = True, batch_size=64, texts=out2[0][0], masks=out2[0][1], labels=out2[1])
+    x3 = WE.cre_tf_dataset(is_testset = True, batch_size=64, texts=out[0][0], masks=out[0][1], labels=out[1])
     train_tf = np.delete(train_tf.toarray(), out[2], axis=0)
     test_tf = np.delete(test_tf.toarray(), out2[2], axis=0)
     # print(f'num train sample linear: {train_tf.shape[0]}, num test sample linear: {test_tf.shape[0]}')
@@ -65,19 +95,22 @@ def prepare_data_for_text_classification(
         }
     #tc =Text_classification(u_label,max_len,WE.get_embedding_size(),True,True,False,train_tf,train_dataframe['labels'],test_tf,test_dataframe['labels'],x,x2)
 
-def prepare_data_for_sequence_prediction(
-    train_collection:'(tuple[Collection[list(str)], Collection[list(int)], Collection[int(int)], ....]) tuple of collections containing list of tokens, labels for outhers (multi-task is ok)',
-    test_collection:'(tuple[Collection[list(str)], Collection[list(int)], Collection[int(int)], ....]) tuple of collections containing list of tokens, labels for outhers (multi-task is ok)',
-    max_len: '(int) max length of all sentences (shorter sentences will be padded, longer sentences will be truncated)',
-    min_len: '(int) min number of tokens per sample ==> if less than min_len, we drop that sample',
-    word_embedder: '(str) engine to be used for word embedding' = 'fasttext',
-    num_unique_label: '(int)' = 3
-    ):
-  
-  WE = Word_Embedder(word_embedder, max_len, True, num_unique_label)
-  out1 = WE.cre_tf_dataset(is_testset=False,batch_size=64,texts=train_collection[0][0][0] ,masks=train_collection[0][0][1],labels=train_collection[0][1])
-  out2 = WE.cre_tf_dataset(is_testset=True,batch_size=64,texts=test_collection[0][0][0] ,masks=test_collection[0][0][1],labels=test_collection[0][1])
-  return
+# def prepare_data_for_sequence_prediction(
+#     train_collection:'(tuple[Collection[list(str)], Collection[list(int)], Collection[int(int)], ....]) tuple of collections containing list of tokens, labels for outhers (multi-task is ok)',
+#     test_collection:'(tuple[Collection[list(str)], Collection[list(int)], Collection[int(int)], ....]) tuple of collections containing list of tokens, labels for outhers (multi-task is ok)',
+#     max_len: '(int) max length of all sentences (shorter sentences will be padded, longer sentences will be truncated)',
+#     min_len: '(int) min number of tokens per sample ==> if less than min_len, we drop that sample',
+#     word_embedder: '(str) engine to be used for word embedding' = 'fasttext',
+#     unique_labels: '(dict[str: int])'
+#     ):
+#   WE = Word_Embedder(word_embedder, max_len, True, num_unique_label)
+#   out1 = WE.cre_tf_dataset(is_testset=False,batch_size=64,texts=train_collection[0][0][0] ,masks=train_collection[0][0][1],labels=train_collection[0][1])
+#   out2 = WE.cre_tf_dataset(is_testset=True,batch_size=64,texts=test_collection[0][0][0] ,masks=test_collection[0][0][1],labels=test_collection[0][1])
+#   #################################################
+#   ############# Not Ready Yet #####################
+#   return {
+#     'train_generator': out1, 'test_generator':out2, 'max_len': max_len, 'embedding_size': WE.get_embedding_size(), 
+#     'min_len': min_len, 'word_embedder':word_embedder}
 
 class Text_classification():
   def __init__(self,
@@ -100,41 +133,52 @@ class Text_classification():
     self.max_len = prepared_data_dict['max_len']
     self.min_len = prepared_data_dict['min_len']
     self.word_embedder = prepared_data_dict['word_embedder']
-    self.engine = prepared_data_dict['engine']
     self.num_feature_per_word = prepared_data_dict['embedding_size']
     self.class_dict = prepared_data_dict['unique_label']
-    self.do_deep_learning = do_deep_learning
-    self.do_linear_classifier = do_linear_classifier
     self.is_sequence_prediciton = is_sequence_prediciton
-    self.tfxidf_train = prepared_data_dict['tfxidf_train']
-    self.label_train = prepared_data_dict['tfxidf_label_train']
-    self.tfxidf_test = prepared_data_dict['tfxidf_test']
-    self.label_test = prepared_data_dict['tfxidf_label_test']
     self.tf_train_dataset = prepared_data_dict['tf_train_dataset']
     self.tf_test_dataset = prepared_data_dict['tf_test_dataset']
     self.tf_train_dataset2 = prepared_data_dict['tf_train_dataset2']
-    #self.dl_model = None
-    #self.linear_classifier = None
-    
+    self.dl_model = None
     self.class_weight = prepared_data_dict['class_weight']
     self.model_path = os.path.join('trained_models',model_path)
-    self.ensemble_model = None
-    self.config = {
-      'max_len': self.max_len, 
-      'embedding_size': self.num_feature_per_word,
-      'class_dict': self.class_dict,
-      'is_sequence_prediction': self.is_sequence_prediciton,
-      'min_len': self.min_len,
-      'word_embedder': self.word_embedder,
-      'engine': self.engine
-      }
+
+    
+    if self.is_sequence_prediciton:
+      self.config = {
+        'max_len': self.max_len, 
+        'embedding_size': self.num_feature_per_word,
+        'class_dict': self.class_dict,
+        'is_sequence_prediction': self.is_sequence_prediciton,
+        'min_len': self.min_len,
+        'word_embedder': self.word_embedder
+        }
+    else:
+      self.config = {
+        'max_len': self.max_len, 
+        'embedding_size': self.num_feature_per_word,
+        'class_dict': self.class_dict,
+        'is_sequence_prediction': self.is_sequence_prediciton,
+        'min_len': self.min_len,
+        'word_embedder': self.word_embedder,
+        'engine': self.engine
+        }
+      self.engine = prepared_data_dict['engine']
+      self.do_deep_learning = do_deep_learning
+      self.do_linear_classifier = do_linear_classifier
+      self.tfxidf_train = prepared_data_dict['tfxidf_train']
+      self.label_train = prepared_data_dict['tfxidf_label_train']
+      self.tfxidf_test = prepared_data_dict['tfxidf_test']
+      self.label_test = prepared_data_dict['tfxidf_label_test']
+      self.linear_classifier = None
+      self.ensemble_model = None
     
     os.makedirs(self.model_path, exist_ok =True) 
     print(f'Created the path: {self.model_path}')
     with open(os.path.join(self.model_path,'model_config.json'), 'w', encoding='utf-8') as file:
       json.dump(self.config, file)
-    self.dl_model = keras.models.load_model( os.path.join(self.model_path, 'deeplearning_model.h5'))
-    self.linear_classifier = load(os.path.join(self.model_path, 'logistic_regression_model.joblib'))
+    # self.dl_model = keras.models.load_model( os.path.join(self.model_path, 'deeplearning_model.h5'))
+    # self.linear_classifier = load(os.path.join(self.model_path, 'logistic_regression_model.joblib'))
 
     # if do_deep_learning:
     #   self.dl_model = self.cre_deep_learning_model()
@@ -175,7 +219,13 @@ class Text_classification():
         x = keras.layers.LeakyReLU()(x)
       SEQ_out = keras.layers.Dense(len(self.class_dict), activation= 'softmax', name='seq_out', kernel_regularizer= L2, bias_regularizer= L2)(x)
       return keras.Model(inputs= [inputs, masks], outputs = SEQ_out)
-  
+
+  def fit_count_based(self):
+    if self.is_sequence_prediciton:
+      print('count-based model is not available for sequence prediction tasks')
+      return None
+
+
   def fit_linear_classifier(self):
     if self.is_sequence_prediciton:
       print('linear_classifier is not available for sequence prediction tasks')
