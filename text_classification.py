@@ -66,14 +66,18 @@ def prepare_data_for_text_classification(
     #tc =Text_classification(u_label,max_len,WE.get_embedding_size(),True,True,False,train_tf,train_dataframe['labels'],test_tf,test_dataframe['labels'],x,x2)
 
 def prepare_data_for_sequence_prediction(
-    train_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
-    test_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
+    train_collection:'(tuple[Collection[list(str)], Collection[list(int)], Collection[int(int)], ....]) tuple of collections containing list of tokens, labels for outhers (multi-task is ok)',
+    test_collection:'(tuple[Collection[list(str)], Collection[list(int)], Collection[int(int)], ....]) tuple of collections containing list of tokens, labels for outhers (multi-task is ok)',
     max_len: '(int) max length of all sentences (shorter sentences will be padded, longer sentences will be truncated)',
     min_len: '(int) min number of tokens per sample ==> if less than min_len, we drop that sample',
-    min_df: '(int) consider only tokens which exist greater of equal to min_df documents'=5,
-    word_embedder: '(str) engine to be used for word embedding' = 'fasttext'
+    word_embedder: '(str) engine to be used for word embedding' = 'fasttext',
+    num_unique_label: '(int)' = 3
     ):
-
+  
+  WE = Word_Embedder(word_embedder, max_len, True, num_unique_label)
+  out1 = WE.cre_tf_dataset(is_testset=False,batch_size=64,texts=train_collection[0][0][0] ,masks=train_collection[0][0][1],labels=train_collection[0][1])
+  out2 = WE.cre_tf_dataset(is_testset=True,batch_size=64,texts=test_collection[0][0][0] ,masks=test_collection[0][0][1],labels=test_collection[0][1])
+  return
 
 class Text_classification():
   def __init__(self,

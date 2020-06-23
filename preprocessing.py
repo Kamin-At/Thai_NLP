@@ -148,6 +148,51 @@ class Text_processing():
       else:
         return text_out, ind_drop
   
+  def preprocessing2(
+    self,
+    texts: '(Collection[str]): list of input sentence-level string ==> already tokenized and use "|" as the delimiter, use "/" as the separator separating between a word and its label. Ex. ฉัน/Noun|กิน/Verb|...',
+    do_padding: '(bool) use padding or not. In case of True, masks are also returned (False for padding token. Otherwise is True)' = False
+    ):
+    tokens = []
+    labels = []
+    masks = []
+    all_labels = {}
+    for i in range(len(texts)):
+      texts[i] = texts[i].strip()
+      if texts[i] != '':
+        tokens.append([])
+        labels.append([])
+        for j in texts[i].split('|'):
+          tmp = j.strip().split('/')
+          if len(tmp[0]) < self.min_len_character:
+            continue
+          else:
+            tokens[-1].append(tmp[0])
+            labels[-1].append(tmp[1])
+            if tmp[1] not in all_labels:
+              all_labels[tmp[1]] = len(all_labels)
+    
+    for i in range(len(tokens)):
+      if len(tokens[i]) < self.min_len:
+        continue
+      elif len(tokens[i]) >= self.max_len:
+        tokens[i] = tokens[i][:self.max_len]
+        labels[i] = labels[i][:self.max_len]
+        masks.append([True]*self.max_len)
+      else:
+        if do_padding:
+          masks.append([True]*(len(tokens[i])) + [False]*(self.max_len - len(tokens[i])))
+          tokens[i] = tokens[i] + ['-PAD-']*(self.max_len - len(tokens[i]))
+          labels[i] = labels[i][:self.max_len] + ['-PAD-']*(self.max_len - len(labels[i]))
+        else:
+          continue
+    if do_padding:
+      return ((tokens, masks), labels), all_labels
+    else:
+      return (tokens, labels), all_labels
+
+
+
   def tokenize(self,
                text: '(str) sentence-level string to be tokenized'
                ) -> '(list[str]) only tokenize doesnt apply any preprocessing step':
@@ -253,39 +298,46 @@ class Word_Embedder():
   def __init__(self,
                engine: '(str) embedder name ==> For now, only Thai fasttext is supported',
                max_len: '(int) number of tokens',
-               is_sequence_prediction: '(bool) True for sequence prediction (Ex: NER), False for sentence prediction (Ex: Sentiment Analysis)' = False
+               is_sequence_prediction: '(bool) True for sequence prediction (Ex: NER), False for sentence prediction (Ex: Sentiment Analysis)' = False,
+               num_unique_label: '(int)' = 3
                ):
     self.model = registered_encoders[engine]['load_model']()
     self.encode_function = registered_encoders[engine]['encode']
     self.encode_size = registered_encoders[engine]['encode_size'] # 300 for Thai fasttext
     self.max_len = max_len
     self.is_sequence_prediction = is_sequence_prediction
-
+    self.num_unique_label = num_unique_label
   def cre_generator(self,
                     texts: '(Collection[Collection[str]]) Collection of collections of tokenized words==> with padding!',
                     masks: '(Collection[Collection[bool]]) Collection of collections of booleans indicating -PAD- ==> True for non-padding token',
-                    labels: '(Collection[Collection[int]]) Collection of collections of labels ==> int ranging from 0 to num_unique_label - 1'):
-    
-    for i in range(len(texts)):
-      encoded_texts = []
-      for j in range(self.max_len):
-        encoded_texts.append(self.encode_function(self.model, texts[i][j]))
-      yield ({'word_vectors': np.stack(encoded_texts), 'masks': masks[i]}, labels[i])
+                    labels: '(Collection[Collection[int]]) Collection of collections of labels ==> int ranging from 0 to num_unique_label - 1'
+                    ):
+    if self.is_sequence_prediction:
+      for i in range(len(texts)):
+        encoded_texts = []
+        for j in range(self.max_len):
+          encoded_texts.append(self.encode_function(self.model, texts[i][j]))
+        yield ({'word_vectors': np.stack(encoded_texts), 'masks': masks[i]}, keras.utils.to_categorical(labels[i], num_classes=self.num_unique_label))
+    else:
+      for i in range(len(texts)):
+        encoded_texts = []
+        for j in range(self.max_len):
+          encoded_texts.append(self.encode_function(self.model, texts[i][j]))
+        yield ({'word_vectors': np.stack(encoded_texts), 'masks': masks[i]}, labels[i])
 
   def cre_tf_dataset(self,
                      is_testset: '(bool)',
                      batch_size: '(int)',
                      texts: '(Collection[Collection[str]]) Collection of collections of tokenized words==> with padding!',
                      masks: '(Collection[Collection[bool]]) Collection of collections of booleans indicating -PAD- ==> True for non-padding token',
-                     labels: '(Collection[Collection[int]]) Collection of collections of labels ==> int ranging from 0 to num_unique_label - 1',
-                     num_label: '(int) can be used for either sequence predictions (token-level) or sentence predictions (sentence-level)'
+                     labels: '(Collection[Collection[int]]) Collection of collections of labels ==> int ranging from 0 to num_unique_label - 1'
                      ):
     if self.is_sequence_prediction:
       data = tf.data.Dataset.from_generator(lambda: self.cre_generator(texts, masks, labels), output_types= ({'word_vectors':tf.float32, 'masks':tf.bool}, tf.float32), 
-                                            output_shapes=({'word_vectors':tf.TensorShape([self.max_len,self.encode_size]), 'masks': tf.TensorShape([self.max_len])}, tf.TensorShape([self.max_len,num_label])))
+                                            output_shapes=({'word_vectors':tf.TensorShape([self.max_len,self.encode_size]), 'masks': tf.TensorShape([self.max_len])}, tf.TensorShape([self.max_len,self.num_unique_label])))
     else:
       data = tf.data.Dataset.from_generator(lambda: self.cre_generator(texts, masks, labels), output_types= ({'word_vectors':tf.float32, 'masks':tf.bool}, tf.float32), 
-                                            output_shapes=({'word_vectors':tf.TensorShape([self.max_len,self.encode_size]), 'masks': tf.TensorShape([self.max_len])}, tf.TensorShape([num_label])))
+                                            output_shapes=({'word_vectors':tf.TensorShape([self.max_len,self.encode_size]), 'masks': tf.TensorShape([self.max_len])}, tf.TensorShape([self.num_unique_label])))
     
     AUTO = tf.data.experimental.AUTOTUNE
     if is_testset:
