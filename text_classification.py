@@ -3,6 +3,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import f1_score, confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+
 import seaborn as sns
 import os
 import tensorflow as tf
@@ -12,6 +15,8 @@ import numpy as np
 from joblib import dump, load
 import json
 import pandas as pd
+import regex as re
+
 
 from preprocessing import Word_Embedder
 from preprocessing import Text_processing
@@ -19,8 +24,26 @@ from preprocessing import Text_processing
 class count_based_model():
   def __init__(
     self,
-    filename_dict: '(dict[str: collection[str]]) example: {"Negative class": ["neg.txt", "neg_manual.txt"], "Positive class": ["pos.txt"]}'):
+    filename_dict: '(dict[str: collection[str]]) example: {"Negative class": ["neg.txt", "neg_manual.txt"], "Positive class": ["pos.txt"]}',
+    is_sentiment_analysis: '(bool) if True ==> the class should contains "pos" ==> positive and "neg" ==> negative',
+    do_load_models: '(bool) True if use pretrained models',
+    model_path: '(str) model path'):
     self.class_dictionary = {}
+    self.is_sentiment_analysis = is_sentiment_analysis
+    self.model_path = model_path
+    self.all_cols = []
+    if do_load_models:
+      self.model, self.scaler = self.load_model()
+      self.mapping = {ind: tmp_class for ind, tmp_class in enumerate(self.model.classes_)}
+      with open(os.path.join(self.model_path,'count_based_model_config.txt'), 'r', encoding='utf8') as f:
+        for line in f:
+          line = line.strip()
+          if line != '':
+            self.all_cols.append(line)
+    else:
+      self.model = None
+      self.scaler = None
+      self.mapping = {}
     for tmp_class in filename_dict:
       self.class_dictionary[tmp_class] = set()
       for tmp_file in filename_dict[tmp_class]:
@@ -29,13 +52,80 @@ class count_based_model():
             word = word.strip()
             if word != '':
               word = ''.join(word.split(' '))
-              self.class_dictionary[tmp_class].add(word)
+              if len(word) > 1:
+                self.class_dictionary[tmp_class].add(word)
+    self.class_finding = {}
+    for tmp_class in self.class_dictionary:
+      self.class_finding[tmp_class] = '('+'|'.join(self.class_dictionary[tmp_class]) + ')'
     
+  def load_model(self):
+      return load(os.path.join(self.model_path, 'SVM_count_based_model.joblib')), load(os.path.join(self.model_path, 'z_normalizer.joblib'))
+  def encode(
+    self,
+    string_in: '(str) sentence-level string'):
     
+    tmp_dict = {}
+    for tmp_class in self.class_finding:
+      tmp_dict[tmp_class] = [len(re.findall(self.class_finding[tmp_class], string_in))]
+      # print(f'tmp_class: {tmp_class}, tmp_dict[tmp_class]: {tmp_dict[tmp_class]}')
+      tmp_dict['log_' + tmp_class] = [np.log(1 + tmp_dict[tmp_class][0])]
+    if self.is_sentiment_analysis:
+      tmp_dict['pos-neg'] = [tmp_dict['pos'][0] - tmp_dict['neg'][0]]
+    # print(tmp_dict)
+    # print(self.all_cols)
+    tmp_dict = pd.DataFrame(tmp_dict)
+    # print(tmp_dict[self.all_cols].values)
+    tmp = self.scaler.transform(tmp_dict[self.all_cols].values)
+    # print(tmp)
+    # print(tmp.shape)
+    return tmp
 
+  def fit(
+    self,
+    traing_df: '(pd.DataFrame) contains "texts" ==> sentence_level_data, "labels" ==> sentence_level_label columns',
+    test_df: '(pd.DataFrame) contains "texts" ==> sentence_level_data, "labels" ==> sentence_level_label columns'):
+    self.all_cols = []
+    for tmp_class in self.class_finding:
+      self.all_cols.extend([tmp_class, 'log_'+tmp_class])
+      traing_df[tmp_class] = traing_df['texts'].apply(lambda z: len(re.findall(self.class_finding[tmp_class], z)))
+      traing_df['log_' + tmp_class]= np.log(1 + traing_df[tmp_class])
+      test_df[tmp_class] = test_df['texts'].apply(lambda z: len(re.findall(self.class_finding[tmp_class], z)))
+      test_df['log_' + tmp_class]= np.log(1 + test_df[tmp_class])
+      
+    if self.is_sentiment_analysis:
+      traing_df['pos-neg'] = traing_df['pos'] - traing_df['neg']
+      test_df['pos-neg'] = test_df['pos'] - test_df['neg']
+      self.all_cols.append('pos-neg')
+    print('running grid search and 5-folds cross validation')
+    parameters = {'C':[1]}#[0.001, 0.01, 0.1, 1, 5, 10, 100]}
+    self.scaler = StandardScaler()
+    self.scaler.fit(traing_df[self.all_cols].values)
+    dump(self.scaler, os.path.join(self.model_path, 'z_normalizer.joblib'))
+    tr = self.scaler.transform(traing_df[self.all_cols].values)
+    te = self.scaler.transform(test_df[self.all_cols].values)
+    model = SVC(kernel='rbf', class_weight='balanced')
+    clf = GridSearchCV(model, parameters, scoring= 'f1_macro', return_train_score= True)
+    out = clf.fit(tr, traing_df['labels'])
+    best_c = out.best_params_['C']
+    self.model = SVC( C=best_c, kernel='rbf', class_weight='balanced')
+    out = self.model.fit(tr, traing_df['labels'])
+    y_pred = out.predict(te)
+    out2 = f1_score(test_df['labels'],y_pred,average=None)
+    print(f'best_C: {best_c}, f1-score: {out2}, f1-macro: {np.mean(out2)}')
+    dump(self.model, os.path.join(self.model_path, 'SVM_count_based_model.joblib'))
 
+    with open(os.path.join(self.model_path,'count_based_model_config.txt'), 'w', encoding='utf-8') as file:
+      for i in self.all_cols:
+        file.write(i + '\n')
 
+  def predict(
+    self,
+    string_in: '(str) sentence-level string'):
+    tmp = self.encode(string_in)
+    out = self.model.predict(tmp)
+    return out[0]
 
+    
 def prepare_data_for_text_classification(
     train_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
     test_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
