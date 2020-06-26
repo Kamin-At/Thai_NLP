@@ -157,6 +157,7 @@ class Text_processing():
     labels = []
     masks = []
     all_labels = {}
+    count_ulabels = {}
     for i in range(len(texts)):
       texts[i] = texts[i].strip()
       if texts[i] != '':
@@ -171,6 +172,9 @@ class Text_processing():
             labels[-1].append(tmp[1])
             if tmp[1] not in all_labels:
               all_labels[tmp[1]] = len(all_labels)
+              count_ulabels[tmp[1]] = 1
+            else:
+              count_ulabels[tmp[1]] += 1
     
     for i in range(len(tokens)):
       if len(tokens[i]) < self.min_len:
@@ -187,9 +191,9 @@ class Text_processing():
         else:
           continue
     if do_padding:
-      return ((tokens, masks), labels), all_labels
+      return ((tokens, masks), labels), all_labels, count_ulabels
     else:
-      return (tokens, labels), all_labels
+      return (tokens, labels), all_labels, count_ulabels
 
 
 
@@ -299,14 +303,14 @@ class Word_Embedder():
                engine: '(str) embedder name ==> For now, only Thai fasttext is supported',
                max_len: '(int) number of tokens',
                is_sequence_prediction: '(bool) True for sequence prediction (Ex: NER), False for sentence prediction (Ex: Sentiment Analysis)' = False,
-               num_unique_label: '(int)' = 3
+               unique_labels: '(dict[str: int])' = None
                ):
     self.model = registered_encoders[engine]['load_model']()
     self.encode_function = registered_encoders[engine]['encode']
     self.encode_size = registered_encoders[engine]['encode_size'] # 300 for Thai fasttext
     self.max_len = max_len
     self.is_sequence_prediction = is_sequence_prediction
-    self.num_unique_label = num_unique_label
+    self.unique_labels = unique_labels
   def cre_generator(self,
                     texts: '(Collection[Collection[str]]) Collection of collections of tokenized words==> with padding!',
                     masks: '(Collection[Collection[bool]]) Collection of collections of booleans indicating -PAD- ==> True for non-padding token',
@@ -317,7 +321,10 @@ class Word_Embedder():
         encoded_texts = []
         for j in range(self.max_len):
           encoded_texts.append(self.encode_function(self.model, texts[i][j]))
-        yield ({'word_vectors': np.stack(encoded_texts), 'masks': masks[i]}, keras.utils.to_categorical(labels[i], num_classes=self.num_unique_label))
+        # print('labels[i]')
+        # print(labels[i])
+
+        yield ({'word_vectors': np.stack(encoded_texts), 'masks': masks[i]}, keras.utils.to_categorical([self.unique_labels[k] for k in labels[i]], num_classes=len(self.unique_labels)))
     else:
       for i in range(len(texts)):
         encoded_texts = []
@@ -334,10 +341,10 @@ class Word_Embedder():
                      ):
     if self.is_sequence_prediction:
       data = tf.data.Dataset.from_generator(lambda: self.cre_generator(texts, masks, labels), output_types= ({'word_vectors':tf.float32, 'masks':tf.bool}, tf.float32), 
-                                            output_shapes=({'word_vectors':tf.TensorShape([self.max_len,self.encode_size]), 'masks': tf.TensorShape([self.max_len])}, tf.TensorShape([self.max_len,self.num_unique_label])))
+                                            output_shapes=({'word_vectors':tf.TensorShape([self.max_len,self.encode_size]), 'masks': tf.TensorShape([self.max_len])}, tf.TensorShape([self.max_len,len(self.unique_labels)])))
     else:
       data = tf.data.Dataset.from_generator(lambda: self.cre_generator(texts, masks, labels), output_types= ({'word_vectors':tf.float32, 'masks':tf.bool}, tf.float32), 
-                                            output_shapes=({'word_vectors':tf.TensorShape([self.max_len,self.encode_size]), 'masks': tf.TensorShape([self.max_len])}, tf.TensorShape([self.num_unique_label])))
+                                            output_shapes=({'word_vectors':tf.TensorShape([self.max_len,self.encode_size]), 'masks': tf.TensorShape([self.max_len])}, tf.TensorShape([len(self.unique_labels)])))
     
     AUTO = tf.data.experimental.AUTOTUNE
     if is_testset:
