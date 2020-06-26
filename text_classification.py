@@ -104,7 +104,7 @@ class count_based_model():
     tr = self.scaler.transform(traing_df[self.all_cols].values)
     te = self.scaler.transform(test_df[self.all_cols].values)
     model = SVC(kernel='rbf', class_weight='balanced')
-    clf = GridSearchCV(model, parameters, scoring= 'f1_macro', return_train_score= True)
+    clf = GridSearchCV(model, parameters, scoring= 'f1_macro', return_train_score= True, n_jobs=-1)
     out = clf.fit(tr, traing_df['labels'])
     best_c = out.best_params_['C']
     self.model = SVC( C=best_c, kernel='rbf', class_weight='balanced')
@@ -358,9 +358,9 @@ class Text_classification():
       return None
     print('SVM classifier part')
     print('running 5-fold cv')
-    parameters = {'C':[0.05, 0.01, 0.5, 0.1, 1, 5, 10, 100, 500]}   
+    parameters = {'C':[ 0.01, 0.1, 1, 10, 100]}   
     model = SVC(kernel='rbf', class_weight='balanced')
-    clf = GridSearchCV(model, parameters, scoring= 'f1_macro', return_train_score= True, n_jobs=-1)
+    clf = GridSearchCV(model, parameters, scoring= 'f1_macro', return_train_score= True, n_jobs=5)
     out = clf.fit(self.tfxidf_train, self.label_train)
     best_c = out.best_params_['C']
     self.SVM_classifier = SVC(C=best_c, kernel='rbf', class_weight='balanced')
@@ -389,7 +389,7 @@ class Text_classification():
         y_true_all.append(np.argmax(data[1], axis=2).flatten())
       y_true_all = np.stack(y_true_all).flatten()
       y_pred_all = np.stack(y_pred_all).flatten()
-      f1s = f1_score(y_true_all, y_pred_all)
+      f1s = f1_score(y_true_all, y_pred_all, average=None)
       W_f1s = f1_score(y_true_all, y_pred_all, average='weighted')
       print(f'f1s: {f1s}')
       print(f'Unweighted f1-score: {np.mean(f1s)}, Weighted f1-score: {W_f1s}')

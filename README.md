@@ -28,7 +28,7 @@
   - is_sequence_prediciton (bool) ==> if True, it is for sequence prediction, for example: named-entity recognition (unsupported for now). False is for senetence-level prediciton, for example: sentiment analysis and intent classification. 
   - folder name (string) after training each model, a new folder will be created to store the models and the models' configuration file in the trained_model folder.
 
-### 4. Call fit_linear_classifier and fit_deep_learning functions which belong to Text_classification class.
+### 4. Call fit_linear_classifier, fit_SVM_classifier and fit_deep_learning functions which belong to Text_classification class.
 
 ## Models usage for text-classification (predeiction)
 It is recommended to move the folder containing the trained models in "trained_models" to the "models for real deployment" folder to avoid overwriting the trained model with the new one (in case of training new models).
@@ -41,7 +41,28 @@ It is recommended to move the folder containing the trained models in "trained_m
 
 - Step 2. Call predict function which belongs to  Text_classification_for_prediction class. this function requires only a plain text (string) as the input. (Collection of string is not supported)
 
+## To train a model for sequence prediction
+### Step 1. Inputs
+### list of raw sentence-level. Ex: ["สมเกียรติ/PER_B|ได้/O|กิน/O|ไก่ย่าง/O", "สมหมาย/PER_B|ได้/O|กิน/O|ไก่ย่าง", ...] for Named-Entity Recognition
+For now, this module supports only 1 kind of tags. (if more than one kind of tags is given, the model considers only the first one only)
+### Step 2. Call preprocessing2 function from preprocessing.py in Text_processing class
+- the function requires...
+  - texts (Collection[str]) from step 1.
+  - do_padding (bool) return tokens with padding to max_len, and also return masking (For now, to fit with deep learning model, padding is required)
+
+- this function returns
+   - ((tokens, masks), labels), all_labels, count_ulabels where
+        - tokens (list[list[str]]) list of lists of tokens
+        - masks (list[list[bool]]) list of lists of masking boolean ==> False for padding token (-PAD-), True for others
+        - labels (list[list[str]]) string label
+        - all_labels (dict[str: int]) dictionary of unique labels with its unique id (will be used for one-hot encoding)
+        - count_ulabels (dict[str: int]) dictionary of labels with count on its occurences
+
+### Step 3. Call prepare_data_for_sequence_prediction function from text_classification.py
+- this step is exactly the same as step 3 in text-classification. Except: is_sequence_prediciton = True.
+
+### Step 4. Call fit_deep_learning function
+
 # Future features
-- ### Sequence prediction
 - ### Other embedders (now, support only tf-idf and fasttext encoding)
 - ### Custom deep learning model
