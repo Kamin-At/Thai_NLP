@@ -9,6 +9,7 @@ from sklearn.svm import SVC
 import seaborn as sns
 import os
 import tensorflow as tf
+from tensorflow.keras import backend as K
 import tensorflow.keras as keras
 import matplotlib.pyplot as plt
 import numpy as np
@@ -136,12 +137,27 @@ def prepare_data_for_text_classification(
     word_embedder: '(str) engine to be used for word embedding' = 'fasttext',
     tfxidf_path: '(str) path to save the tf-idf model'= 'tf-idf_encoder',
     engine: '(str) engine used for word tokenization' = 'newmm',
-    threshold_tfxidf: '(float) consider words which correspond to each class' = 0.01
+    threshold_tfxidf: '(float) consider words which correspond to each class' = 0.01,
+    verbose=False
     ):
-    tp = Text_processing(max_len, min_len,engine=engine)
-    d = tp.visualize_important_words(train_dataframe['texts'],train_dataframe['labels'],n_gram_range,min_df, tfxidf_path= tfxidf_path)
+    u_label = {}
+    for ind, i in enumerate(train_dataframe['labels'].value_counts().index):
+        u_label[i] = ind
+    print('initializing')
+    tp = Text_processing(max_len, min_len,engine=engine,verbose=verbose)
+    print('tf-idf train begins')
+    train_dataframe['texts_bef'] = train_dataframe['texts'].apply(tp.apply_rules_before)
+    test_dataframe['texts_bef'] = test_dataframe['texts'].apply(tp.apply_rules_before)
+    d = tp.visualize_important_words(train_dataframe['texts_bef'],train_dataframe['labels'],n_gram_range,min_df, tfxidf_path= tfxidf_path)
+#     d = tp.visualize_important_words(,,n_gram_range,min_df, tfxidf_path= tfxidf_path)
+    print('finished tf-idf train')
     cur_path = os.getcwd()
     os.chdir('word_configs')
+    print('begin text preprocessing')
+    out = tp.preprocessing(train_dataframe['texts'], train_dataframe['labels'], u_label, True, True)
+    print('finished text preprocessing for train')
+    out2 = tp.preprocessing(test_dataframe['texts'], test_dataframe['labels'], u_label, True, True)
+    print('finished text preprocessing for test')
     for i in d:
       tmp_class = i.iloc[0]['label']
       i = i[i['score']> threshold_tfxidf]
@@ -149,18 +165,14 @@ def prepare_data_for_text_classification(
         for j in i['feature']:
           f.write(j+'\n')
     os.chdir(cur_path)
-    u_label = {}
-    for ind, i in enumerate(train_dataframe['labels'].value_counts().index):
-        u_label[i] = ind
-    train_tf = tp.tfxidf_encode(train_dataframe['texts'])
-    test_tf = tp.tfxidf_encode(test_dataframe['texts'])
+    
+    train_tf = tp.tfxidf_encode(train_dataframe['texts_bef'])
+    test_tf = tp.tfxidf_encode(test_dataframe['texts_bef'])
     WE = Word_Embedder(word_embedder, max_len, unique_labels= u_label)
     print(train_dataframe['labels'].value_counts())
     
     #print(u_label)
     
-    out = tp.preprocessing(train_dataframe['texts'], train_dataframe['labels'], u_label, True, True)
-    out2 = tp.preprocessing(test_dataframe['texts'], test_dataframe['labels'], u_label, True, True)
     # print(out[1][:100])
     tmp_label_train = np.argmax(out[1],axis=1)
 
@@ -181,7 +193,7 @@ def prepare_data_for_text_classification(
     return {
         'unique_label': u_label, 'max_len': max_len, 'embedding_size': WE.get_embedding_size(), 'tfxidf_train': train_tf, 
         'tfxidf_label_train': train_dataframe['labels'].drop(out[2],axis=0), 'tfxidf_test': test_tf, 'tfxidf_label_test': test_dataframe['labels'].drop(out2[2],axis=0),
-        'tf_train_dataset': x, 'tf_test_dataset': x2, 'tf_train_dataset2': x3, 'class_weight': CW2, 'min_len': min_len, 'engine': engine, 'word_embedder':word_embedder,
+        'tf_train_dataset': x, 'tf_test_dataset': x2, 'tf_train_dataset2': x3, 'class_weight': CW2, 'min_len': min_len, 'engine': engine, 'word_embedder':word_embedder, 'preprocessed text': out[0][0]
         }
     #tc =Text_classification(u_label,max_len,WE.get_embedding_size(),True,True,False,train_tf,train_dataframe['labels'],test_tf,test_dataframe['labels'],x,x2)
 
@@ -239,7 +251,7 @@ class Text_classification():
     self.tf_train_dataset2 = prepared_data_dict['tf_train_dataset2']
     self.dl_model = None
     self.model_path = os.path.join('trained_models',model_path)
-
+    self.do_deep_learning = do_deep_learning
     
     if self.is_sequence_prediciton:
       self.config = {
@@ -279,17 +291,13 @@ class Text_classification():
       json.dump(self.config, file)
     # self.dl_model = keras.models.load_model( os.path.join(self.model_path, 'deeplearning_model.h5'))
     # self.linear_classifier = load(os.path.join(self.model_path, 'logistic_regression_model.joblib'))
-
-    if do_deep_learning:
-      self.dl_model = self.cre_deep_learning_model()
-      self.dl_model.summary()
     
   def cre_deep_learning_model(
       self,
       dropout_dense=0.4,
       dropout_gru=0.4,
       gru_size=128,
-      num_gru_layer=2,
+      num_gru_layer=3,
       num_dense_layer=3,
       WR = 5e-3):
     L2 = keras.regularizers.l2(WR)
@@ -319,6 +327,18 @@ class Text_classification():
         x = keras.layers.LeakyReLU()(x)
       SEQ_out = keras.layers.Dense(len(self.class_dict), activation= 'softmax', name='seq_out', kernel_regularizer= L2, bias_regularizer= L2)(x)
       return keras.Model(inputs= [inputs, masks], outputs = SEQ_out)
+#   def train_model(self, 
+#                   config: "model's hyper parameters ==> must contain 'cre_model_func' key"):
+#     model = config['cre_model_func'](config)
+#     MC = keras.callbacks.ModelCheckpoint( 'deeplearning_model.h5', monitor="val_loss",verbose=0,save_best_only=True)
+#     RP = keras.callbacks.ReduceLROnPlateau(monitor="loss",factor=0.1,min_lr=1e-6, patience=10)
+#     ES = keras.callbacks.EarlyStopping(monitor="val_loss",min_delta=0,patience=20,restore_best_weights=True)
+#     hist = model.fit(self.tf_train_dataset, 
+#           validation_data = self.tf_test_dataset, 
+#           epochs=500, 
+#           callbacks=[MC,RP,ES], 
+#           use_multiprocessing=False)
+    
 
   def fit_count_based(self):
     if self.is_sequence_prediciton:
@@ -332,7 +352,7 @@ class Text_classification():
       return None
     print('Linear classifier part')
     print('running 5-fold cv')
-    parameters = {'C':[0.001, 0.01, 0.5, 0.1, 1, 5, 10, 100]}   
+    parameters = {'C':[0.001, 0.05, 0.01, 0.5, 0.1, 1, 3, 5, 8, 10, 50, 100]}   
     model = LogisticRegression(penalty="l2", solver="liblinear", dual=False, multi_class="ovr", class_weight='balanced')
     clf = GridSearchCV(model, parameters, scoring= 'f1_macro', return_train_score= True, n_jobs=-1)
     out = clf.fit(self.tfxidf_train, self.label_train)
@@ -420,14 +440,18 @@ class Text_classification():
       print(f'Unweighted f1-score: {np.mean(f1s)}, Weighted f1-score: {np.sum(f1s*count_classes)/np.sum(count_classes)}')
 
 
-  def fit_deep_learning(self):
+  def fit_deep_learning(self, alpha=.25,gamma=2):
     cur_path = os.getcwd()
+    if self.do_deep_learning:
+      self.dl_model = self.cre_deep_learning_model()
+      self.dl_model.summary()
     os.chdir(self.model_path)
     MC = keras.callbacks.ModelCheckpoint( 'deeplearning_model.h5', monitor="val_loss",verbose=0,save_best_only=True)
-    RP = keras.callbacks.ReduceLROnPlateau(monitor="loss",factor=0.1,min_lr=1e-6, patience=5)
-    ES = keras.callbacks.EarlyStopping(monitor="val_loss",min_delta=0,patience=10,restore_best_weights=True)
+    RP = keras.callbacks.ReduceLROnPlateau(monitor="loss",factor=0.1,min_lr=1e-6, patience=10)
+    ES = keras.callbacks.EarlyStopping(monitor="val_loss",min_delta=0,patience=20,restore_best_weights=True)
     if self.is_sequence_prediciton:
-        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001, amsgrad=True),loss='CategoricalCrossentropy')
+        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001, amsgrad=True),
+                              loss=categorical_focal_loss(alpha=alpha, gamma=gamma))
         hist = self.dl_model.fit(
           self.tf_train_dataset, 
           validation_data = self.tf_test_dataset, 
@@ -437,7 +461,8 @@ class Text_classification():
     else:
         P = keras.metrics.Precision()
         R = keras.metrics.Recall()
-        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001, amsgrad=True),loss='CategoricalCrossentropy', metrics= [P,R])
+        self.dl_model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001, amsgrad=True),
+                              loss=categorical_focal_loss(alpha=alpha, gamma=gamma), metrics= [P,R])
         hist = self.dl_model.fit(
           self.tf_train_dataset, 
           validation_data = self.tf_test_dataset, 
@@ -445,6 +470,7 @@ class Text_classification():
           callbacks=[MC,RP,ES], 
           use_multiprocessing=True,
           class_weight=self.class_weight)
+        
     print('f1-scores')
     self.eval_dl_text_classification()
     plt.plot(hist.history['loss'], label='Loss')
@@ -565,8 +591,8 @@ class Text_classification_for_prediction():
     except:
       raise Exception(f"Wrong model path: {model_path}")
     Dirs = os.listdir()
-    if len(Dirs) != 4:
-      raise Exception(f"The model path: {model_path} should sotre only 1 folder for deeplearning model and 2 .joblib extension for logistic regression and SVM models and 1 .json extension for the model config")
+    #if len(Dirs) != 4:
+      #raise Exception(f"The model path: {model_path} should sotre only 1 folder for deeplearning model and 2 .joblib extension for logistic regression and SVM models and 1 .json extension for the model config")
     for Dir in Dirs:
       if '.json' in Dir:
         continue
@@ -586,9 +612,9 @@ class Text_classification_for_prediction():
     with open(os.path.join(self.model_path,'model_config.json'), 'r', encoding='utf-8') as fh:
       self.config = json.load(fh)
     self.class_mapping = {y:x for x,y in self.config['class_dict'].items()}
+    self.tp = Text_processing(self.config['max_len'],self.config['min_len'], engine=self.config['engine'])
     if self.deeplearning_model:
       print('loading the embedder and tokenizer')
-      self.tp = Text_processing(self.config['max_len'],self.config['min_len'], engine=self.config['engine'])
       self.WE = Word_Embedder(self.config['word_embedder'], self.config['max_len'],is_sequence_prediction=self.config['is_sequence_prediction'])
   
   def predict(
@@ -596,7 +622,8 @@ class Text_classification_for_prediction():
     text: '(str) raw sentence-level string'):
     outputs = {}
     if self.engine in ['all', 'linear_classifier', 'SVM_classifier']:
-      vectorized_sentences = self.tfxidf_model.transform([text])
+      text2 = ' '.join([i.strip() for i in self.tp.apply_rules_before(text).split(' ') if i.strip() != ''])
+      vectorized_sentences = self.tfxidf_model.transform([text2])
     if self.engine == 'linear_classifier' or self.engine == 'all':
       if self.logistic_regression_model:
         y_pred = self.logistic_regression_model.predict_proba(vectorized_sentences)
@@ -612,7 +639,7 @@ class Text_classification_for_prediction():
         outputs['SVM'] = y_pred
     if self.engine == 'deeplearning' or self.engine == 'all':
       if self.deeplearning_model:
-        tokenized_sentence, masks = self.tp.preprocessing([text], None, None, do_padding=True, return_mask=True)
+        tokenized_sentence, masks, _ = self.tp.preprocessing([text], None, None, do_padding=True, return_mask=True)
         tokenized_sentence = tokenized_sentence[0]
         masks = masks[0]
         # print(f'tokenized sentence: {tokenized_sentence}')
@@ -649,3 +676,46 @@ class Text_classification_for_prediction():
 
 #   def call(self, inputs):  # Defines the computation from inputs to outputs
 #       return tf.matmul(inputs, self.w) + self.b
+def categorical_focal_loss(gamma=2., alpha=.25):
+    """
+    Softmax version of focal loss.
+           m
+      FL = ∑  -alpha * (1 - p_o,c)^gamma * y_o,c * log(p_o,c)
+          c=1
+      where m = number of classes, c = class and o = observation
+    Parameters:
+      alpha -- the same as weighing factor in balanced cross entropy
+      gamma -- focusing parameter for modulating factor (1-p)
+    Default value:
+      gamma -- 2.0 as mentioned in the paper
+      alpha -- 0.25 as mentioned in the paper
+    References:
+        Official paper: https://arxiv.org/pdf/1708.02002.pdf
+        https://www.tensorflow.org/api_docs/python/tf/keras/backend/categorical_crossentropy
+    Usage:
+     model.compile(loss=[categorical_focal_loss(alpha=.25, gamma=2)], metrics=["accuracy"], optimizer=adam)
+    """
+    def categorical_focal_loss_fixed(y_true, y_pred):
+        """
+        :param y_true: A tensor of the same shape as `y_pred`
+        :param y_pred: A tensor resulting from a softmax
+        :return: Output tensor.
+        """
+
+        # Scale predictions so that the class probas of each sample sum to 1
+        y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
+
+        # Clip the prediction value to prevent NaN's and Inf's
+        epsilon = K.epsilon()
+        y_pred = K.clip(y_pred, epsilon, 1. - epsilon)
+
+        # Calculate Cross Entropy
+        cross_entropy = -y_true * K.log(y_pred)
+
+        # Calculate Focal Loss
+        loss = alpha * K.pow(1 - y_pred, gamma) * cross_entropy
+
+        # Compute mean loss in mini_batch
+        return K.mean(K.sum(loss, axis=-1))
+
+    return categorical_focal_loss_fixed

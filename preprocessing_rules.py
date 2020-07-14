@@ -11,6 +11,7 @@ import pythainlp
 rules_before_tokenization = [
     replace_url,
     pythainlp.util.normalize,
+    custom_norm,
     spec_add_spaces,
     rm_useless_spaces,
     rm_useless_newlines,

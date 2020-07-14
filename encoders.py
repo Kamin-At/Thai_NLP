@@ -2,7 +2,7 @@ import fasttext
 
 #### Thai + Eng fasttext ####
 def fasttext_load():
-    model = fasttext.load_model('encoders\\cc.th.300.bin')
+    model = fasttext.load_model('encoders/cc.th.300.bin')
     return model
 def fasttext_encode(model, text):
     return model[text]

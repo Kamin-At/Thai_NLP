@@ -71,23 +71,25 @@ class Text_processing():
   
   def apply_rules_before(self,
                          text: '(str) string to apply rules',
-                         rules: '(Collection[tuple[pattern to be replaced, word to replace]]) Collection of function to process texts in sentence-level'
+#                          rules: '(Collection[tuple[pattern to be replaced, word to replace]]) Collection of function to process texts in sentence-level'
                          ) -> '(str)':
+#     print(text)
+#     print(type(text))
     text = text.strip()
     if text == '':
       return ''
     #######################
     ### apply the rules ###
-    for func in rules:
+    for func in self.rules_before_tokenization:
       text = func(text)
     return text
 
 
   def apply_rules_after(self,
                         texts: '(Collection[str]) Collection of tokens to apply rules',
-                        rules: '(Collection[tuple[pattern to be replaced, word to replace]]) Collection of function to process texts in token-level texts'
+#                         rules: '(Collection[tuple[pattern to be replaced, word to replace]]) Collection of function to process texts in token-level texts'
                         ) -> '(list[str])':
-    for func in rules:
+    for func in self.rules_after_tokenization:
       texts = func(texts)
     return texts
 
@@ -98,6 +100,7 @@ class Text_processing():
                     do_padding: '(bool) use padding or not' = False,
                     return_mask: '(bool) use mask for padding tokens or not' = False
                     )-> 'if return_mask is True list[tuple(list[str], list[bool])] else list[list[str]]':
+    all_len = len(texts)
     text_out = []
     mask_out = []
     try:
@@ -129,19 +132,20 @@ class Text_processing():
 
       if self.verbose:
         if ind % 5 == 0:
-          print(f'text after preprocessing: {text}')
+          print(f'all_len: {all_len}, ind: {ind}, text after preprocessing: {text}')
           print('----------------------------------')
       
       text_out.append(text)
-      mask_out.append(mask)
+      if return_mask:
+          mask_out.append(mask)
       if labels:
         label_out.append(label_dict[labels[ind]])
     if labels:
       label_out = keras.utils.to_categorical(label_out, num_classes=len(label_dict))
       if return_mask:
-        return ((text_out, mask_out), label_out, ind_drop)
+        return ((text_out, mask_out), label_out, ind_drop, labels)
       else:
-        return (text_out, label_out, ind_drop)
+        return (text_out, label_out, ind_drop, labels)
     else:
       if return_mask:
         return (text_out, mask_out, ind_drop)
@@ -204,20 +208,27 @@ class Text_processing():
     #################################
     ### request to elastic search ###
     words = []
-    for word in pythainlp.tokenize.word_tokenize(text, custom_dict=self.dictionary, engine=self.engine):
-      word = word.strip()
-      if len(word) < self.min_len_character or word in self.stopwords:
-        continue
-      words.append(word)
+    if self.engine == 'newmm':
+        for word in pythainlp.tokenize.word_tokenize(text, custom_dict=self.dictionary, engine=self.engine):
+          word = word.strip()
+          if len(word) < self.min_len_character or word in self.stopwords:
+            continue
+          words.append(word)
+    else:
+        for word in pythainlp.tokenize.word_tokenize(text, engine=self.engine):
+          word = word.strip()
+          if len(word) < self.min_len_character or word in self.stopwords:
+            continue
+          words.append(word)
     ################################
     return words
 
   def get_preprocessed_words(self,
                              text: '(str) raw sentence-level string'
                              ) -> '(list[str]) convert plain text to a list of tokens':
-    text = self.apply_rules_before(text, self.rules_before_tokenization)
+    text = self.apply_rules_before(text)
     text = self.tokenize(text)
-    return self.apply_rules_after(text, self.rules_after_tokenization)
+    return self.apply_rules_after(text)
 
   def visualize_important_words(self,
                                 texts: '(Collection[str]) Collection of raw sentence-level texts',
@@ -228,12 +239,12 @@ class Text_processing():
                                 ) -> '(list[pd.DataFrame]) ==> length equals to number of unique labels':
     ## this method uses score ranking from tf-idf feature to see usefulness of each words ##
     
-    vectorizer = TfidfVectorizer(tokenizer=self.tokenize, 
+    vectorizer = TfidfVectorizer(tokenizer=self.tokenize,
                                  ngram_range= n_gram_range,
                                  sublinear_tf=True,
                                  min_df=min_df)
     X = vectorizer.fit_transform(texts)
-    dump(vectorizer, os.path.join('trained_models\\', tfxidf_path + '.joblib'))
+    dump(vectorizer, os.path.join('trained_models/', tfxidf_path + '.joblib'))
     #visualize texts
     #from visualize import top_feats_all, plot_top_feats
     #code from pythainlp
