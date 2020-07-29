@@ -1,9 +1,0 @@
-pos
-log_pos
-neg
-log_neg
-neu
-log_neu
-q
-log_q
-pos-neg

@@ -1,1 +1,0 @@
-{"max_len": 32, "embedding_size": 300, "class_dict": {"negative": 0, "neutral": 1, "positive": 2}, "is_sequence_prediction": false, "min_len": 2, "word_embedder": "fasttext", "engine": "newmm"}
