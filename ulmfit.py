@@ -34,8 +34,7 @@ class SaveEncoderCallback(TrackerCallback):
         if self.every=="epoch": self.learn.save(f'{self.name}_{epoch}')
         else: #every="improvement"
             current = self.get_monitor_value()
-            if isinstanceas dev36="source ~/.virtualenv/dev36/bin/activate"
-(current, Tensor): current = current.cpu()
+            if isinstance(current, Tensor): current = current.cpu()
             if current is not None and self.operator(current, self.best):
                 print(f'Better model found at epoch {epoch} with {self.monitor} value: {current}.')
                 self.best = current
