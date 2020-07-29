@@ -1,3 +1,13 @@
 __pycache__
 .ipynb_checkpoints
 *.bin
+*.csv
+unseen_*.txt
+*.pkl
+Sentiment Analysis
+*.joblib
+count_based_model_config.txt
+Untitled Folder
+text_classification_v*
+text_classification
+sequence_prediction

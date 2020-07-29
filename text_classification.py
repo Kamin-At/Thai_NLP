@@ -5,6 +5,7 @@ from sklearn.metrics import f1_score, confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from sklearn.decomposition import PCA
 
 import seaborn as sns
 import os
@@ -195,6 +196,77 @@ def prepare_data_for_text_classification(
         'tfxidf_label_train': train_dataframe['labels'].drop(out[2],axis=0), 'tfxidf_test': test_tf, 'tfxidf_label_test': test_dataframe['labels'].drop(out2[2],axis=0),
         'tf_train_dataset': x, 'tf_test_dataset': x2, 'tf_train_dataset2': x3, 'class_weight': CW2, 'min_len': min_len, 'engine': engine, 'word_embedder':word_embedder, 'preprocessed text': out[0][0]
         }
+
+def prepare_data_for_text_classification2(
+    train_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
+    test_dataframe:'(pd.DataFrame) dataframe containing 2 fields ==> "texts" (sentence-level text) and "labels" (string)',
+    max_len: '(int) max length of all sentences (shorter sentences will be padded, longer sentences will be truncated)',
+    min_len: '(int) min number of tokens per sample ==> if less than min_len, we drop that sample',
+    n_gram_range: '(tuple[int,int]) (min_n_gram, max_n_gram)' = (1,3),
+    min_df: '(int) consider only tokens which exist greater of equal to min_df documents'=5,
+    word_embedder: '(str) engine to be used for word embedding' = 'fasttext',
+    tfxidf_path: '(str) path to save the tf-idf model'= 'tf-idf_encoder',
+    engine: '(str) engine used for word tokenization' = 'newmm',
+    threshold_tfxidf: '(float) consider words which correspond to each class' = 0.01,
+    verbose=False
+    ):
+    u_label = {}
+    for ind, i in enumerate(train_dataframe['labels'].value_counts().index):
+        u_label[i] = ind
+    print('initializing')
+    tp = Text_processing(max_len, min_len,engine=engine,verbose=verbose)
+    print('tf-idf train begins')
+    train_dataframe['texts_bef'] = train_dataframe['texts'].apply(tp.apply_rules_before)
+    test_dataframe['texts_bef'] = test_dataframe['texts'].apply(tp.apply_rules_before)
+    all_df = pd.concat((train_dataframe, test_dataframe)).reset_index(drop=True)
+    d = tp.visualize_important_words(all_df['texts_bef'],all_df['labels'], n_gram_range, 
+                                     min_df, tfxidf_path= tfxidf_path)
+#     d = tp.visualize_important_words(,,n_gram_range,min_df, tfxidf_path= tfxidf_path)
+    print('finished tf-idf train')
+    cur_path = os.getcwd()
+    os.chdir('word_configs')
+    print('begin text preprocessing')
+    out = tp.preprocessing(train_dataframe['texts'], train_dataframe['labels'], u_label, True, True)
+    print('finished text preprocessing for train')
+    out2 = tp.preprocessing(test_dataframe['texts'], test_dataframe['labels'], u_label, True, True)
+    print('finished text preprocessing for test')
+    for i in d:
+      tmp_class = i.iloc[0]['label']
+      i = i[i['score']> threshold_tfxidf]
+      with open(tmp_class + '.txt', 'w', encoding='utf8') as f:
+        for j in i['feature']:
+          f.write(j+'\n')
+    os.chdir(cur_path)
+    
+    train_tf = tp.tfxidf_encode(train_dataframe['texts_bef'])
+    test_tf = tp.tfxidf_encode(test_dataframe['texts_bef'])
+    WE = Word_Embedder(word_embedder, max_len, unique_labels= u_label)
+    print(train_dataframe['labels'].value_counts())
+    
+    #print(u_label)
+    
+    # print(out[1][:100])
+    tmp_label_train = np.argmax(out[1],axis=1)
+
+    CW = compute_class_weight('balanced', np.unique(tmp_label_train), tmp_label_train)
+    CW2 = {}
+    for i in range(CW.shape[0]):
+      CW2[i] = CW[i]
+    print(f'CW2: {CW2}')
+    x = WE.cre_tf_dataset(is_testset = False, batch_size=64, texts=out[0][0], masks=out[0][1], labels=out[1])
+    x2 = WE.cre_tf_dataset(is_testset = True, batch_size=64, texts=out2[0][0], masks=out2[0][1], labels=out2[1])
+    x3 = WE.cre_tf_dataset(is_testset = True, batch_size=64, texts=out[0][0], masks=out[0][1], labels=out[1])
+    train_tf = np.delete(train_tf.toarray(), out[2], axis=0)
+    test_tf = np.delete(test_tf.toarray(), out2[2], axis=0)
+    # print(f'num train sample linear: {train_tf.shape[0]}, num test sample linear: {test_tf.shape[0]}')
+    # print(f'num train label linear: {len(train_dataframe["labels"].drop(out[2],axis=0))}, num test label linear: {len(test_dataframe["labels"].drop(out[2],axis=0))}')
+    # print(f'num train sample deeplearning: {len(out[0][0])}, num test sample deeplearning: {len(out2[0][0])}')
+    # print(f'num train sample deeplearning: {len(out[1])}, num test sample deeplearning: {len(out2[0])}')
+    return {
+        'unique_label': u_label, 'max_len': max_len, 'embedding_size': WE.get_embedding_size(), 'tfxidf_train': train_tf, 
+        'tfxidf_label_train': train_dataframe['labels'].drop(out[2],axis=0), 'tfxidf_test': test_tf, 'tfxidf_label_test': test_dataframe['labels'].drop(out2[2],axis=0),
+        'tf_train_dataset': x, 'tf_test_dataset': x2, 'tf_train_dataset2': x3, 'class_weight': CW2, 'min_len': min_len, 'engine': engine, 'word_embedder':word_embedder, 'preprocessed text': out[0][0]
+        }
     #tc =Text_classification(u_label,max_len,WE.get_embedding_size(),True,True,False,train_tf,train_dataframe['labels'],test_tf,test_dataframe['labels'],x,x2)
 
 def prepare_data_for_sequence_prediction(
@@ -231,7 +303,8 @@ class Text_classification():
                do_deep_learning: '(bool) if True ==> use bi-GRU to predict'=True,
                do_linear_classifier: '(bool) if True ==> use linear classifier with TF-IDF features'=True,
                is_sequence_prediciton: '(bool) if True ==> Ex. NER, else ==> Ex. Sentiment Analysis'=False,
-               model_path: '(str) folder name which will be created in "trained_models" folder' = 'text_classification'
+               model_path: '(str) folder name which will be created in "trained_models" folder' = 'text_classification',
+               n_components: '(float) n_component in PCA ==> sklearn' = 0.999
                ):
             #    tfxidf_train: '(np.array) (for do_linear_classifier) from TfidfVectorizer.fit or .fit_transform'=None,
             #    label_train: '(Collection[str]) (for do_linear_classifier) Ex. ["angry", "happy", "angry",....]'=None,
@@ -252,7 +325,6 @@ class Text_classification():
     self.dl_model = None
     self.model_path = os.path.join('trained_models',model_path)
     self.do_deep_learning = do_deep_learning
-    
     if self.is_sequence_prediciton:
       self.config = {
         'max_len': self.max_len, 
@@ -267,6 +339,7 @@ class Text_classification():
       self.engine = prepared_data_dict['engine']
       self.do_deep_learning = do_deep_learning
       self.do_linear_classifier = do_linear_classifier
+      
       self.tfxidf_train = prepared_data_dict['tfxidf_train']
       self.label_train = prepared_data_dict['tfxidf_label_train']
       self.tfxidf_test = prepared_data_dict['tfxidf_test']
@@ -283,7 +356,12 @@ class Text_classification():
         'word_embedder': self.word_embedder,
         'engine': self.engine
         }
-      
+      if 0<n_components <= 1.0:
+        self.vectorizer = PCA(n_components=n_components)
+        print(self.tfxidf_train.shape)
+        self.tfxidf_train = self.vectorizer.fit_transform(self.tfxidf_train)
+        self.tfxidf_test = self.vectorizer.transform(self.tfxidf_test)
+        print(self.tfxidf_train.shape)
     
     os.makedirs(self.model_path, exist_ok =True) 
     print(f'Created the path: {self.model_path}')
@@ -352,12 +430,12 @@ class Text_classification():
       return None
     print('Linear classifier part')
     print('running 5-fold cv')
-    parameters = {'C':[0.001, 0.05, 0.01, 0.5, 0.1, 1, 3, 5, 8, 10, 50, 100]}   
-    model = LogisticRegression(penalty="l2", solver="liblinear", dual=False, multi_class="ovr", class_weight='balanced')
+    parameters = {'C':[0.001, 0.05, 0.01, 0.5, 0.1, 1, 3, 5, 8, 10, 30, 50, 100]}
+    model = LogisticRegression(penalty="l2", solver="lbfgs", dual=False, multi_class="ovr", class_weight='balanced', max_iter=10000)
     clf = GridSearchCV(model, parameters, scoring= 'f1_macro', return_train_score= True, n_jobs=-1)
     out = clf.fit(self.tfxidf_train, self.label_train)
     best_c = out.best_params_['C']
-    self.linear_classifier = LogisticRegression(C=best_c, penalty="l2", solver="liblinear", dual=False, multi_class="ovr", class_weight='balanced')
+    self.linear_classifier = LogisticRegression(C=best_c, penalty="l2", solver="lbfgs", dual=False, multi_class="ovr", class_weight='balanced', max_iter=10000)
     self.linear_classifier.fit(self.tfxidf_train, self.label_train)
     dump(self.linear_classifier, os.path.join(self.model_path, 'logistic_regression_model.joblib'))
     y_pred = self.linear_classifier.predict(self.tfxidf_test)

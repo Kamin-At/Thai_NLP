@@ -12,6 +12,8 @@ import numpy as np
 import json
 import matplotlib.pyplot as plt
 
+# ***Most of the code comes from pythainlp***
+
 class SaveEncoderCallback(TrackerCallback):
     "A `TrackerCallback` that saves the model when monitored quantity is best."
     def __init__(self, learn:Learner, monitor:str='valid_loss', mode:str='auto', every:str='improvement', name:str='bestmodel'):
@@ -40,7 +42,7 @@ class SaveEncoderCallback(TrackerCallback):
                 
 class ULMfit_for_predict():
     def __init__(self,
-                 model_path):
+                 model_path: '(str) locate to the folder dont specify in any extension'):
         data_lm = load_data(model_path, "language_model_data.pkl")
         data_lm.sanity_check()
         cur_path = os.getcwd()
@@ -69,7 +71,7 @@ class ULMfit_for_predict():
         self.learn.load("bestmodel")
         self.classes = self.learn.data.train_ds.classes
     def predict(self,
-                raw_text):
+                raw_text: '(str) the raw string to be predicted'):
         dictionary = {}
         x = self.learn.predict(raw_text)[2].numpy()
         for ind, tmp_class in enumerate(self.classes):
@@ -81,7 +83,7 @@ class ULMfit_model():
     # 1. Fine-tuning the language model is needed
     # 2. Train the classifier
     def __init__(self,
-                 data_for_lm, 
+                 data_for_lm: '(pd.DataFrame) containing the "texts" column which represents the raw text inputs', 
                  model_path: '(str) locate to the folder dont specify in any extension'):
         self.model_path = model_path
         self.tt = Tokenizer(tok_func=ThaiTokenizer, lang="th", pre_rules=pre_rules_th, post_rules=post_rules_th)
@@ -118,8 +120,8 @@ class ULMfit_model():
                                  callbacks=[SaveEncoderCallback(self.learn, every='improvement', monitor='accuracy', name='LM'),
                                             EarlyStoppingCallback(self.learn, min_delta=0.0, patience=5)])
     def fit_classifier(self,
-                       tr,
-                       te):
+                       tr: '(pd.DataFrame) containing the "texts" and "labels" columns which contain string of the raw text and its labels',
+                       te: '(pd.DataFrame) containing the "texts" and "labels" columns which contain string of the raw text and its labels'):
         self.processor = [TokenizeProcessor(tokenizer=self.tt, chunksize=10000, mark_fields=False),
             NumericalizeProcessor(vocab=self.data_lm.vocab, max_vocab=60000, min_freq=20)]
 
