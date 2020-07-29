@@ -34,7 +34,8 @@ class SaveEncoderCallback(TrackerCallback):
         if self.every=="epoch": self.learn.save(f'{self.name}_{epoch}')
         else: #every="improvement"
             current = self.get_monitor_value()
-            if isinstance(current, Tensor): current = current.cpu()
+            if isinstanceas dev36="source ~/.virtualenv/dev36/bin/activate"
+(current, Tensor): current = current.cpu()
             if current is not None and self.operator(current, self.best):
                 print(f'Better model found at epoch {epoch} with {self.monitor} value: {current}.')
                 self.best = current
@@ -73,6 +74,9 @@ class ULMfit_for_predict():
     def predict(self,
                 raw_text: '(str) the raw string to be predicted'):
         dictionary = {}
+        if len(raw_text) < 15:
+            dictionary['Error'] = 'the length is too short (< 15 characters)'
+            return dictionary
         x = self.learn.predict(raw_text)[2].numpy()
         for ind, tmp_class in enumerate(self.classes):
             dictionary[tmp_class] = x[ind]
@@ -115,8 +119,9 @@ class ULMfit_model():
         print("training unfrozen")
 #         with GPUMemTrace():
         self.learn.unfreeze()
-
-        self.learn.fit_one_cycle(3, 1e-3, moms=(0.8, 0.7),
+        num_epoch = 1000
+        print(f'Max fitting loop is {num_epoch} ==> EarlyStopping will automatically terminate the training')
+        self.learn.fit_one_cycle(num_epoch, 1e-3, moms=(0.8, 0.7),
                                  callbacks=[SaveEncoderCallback(self.learn, every='improvement', monitor='accuracy', name='LM'),
                                             EarlyStoppingCallback(self.learn, min_delta=0.0, patience=5)])
     def fit_classifier(self,
@@ -144,7 +149,6 @@ class ULMfit_model():
         self.learn = text_classifier_learner(self.data_cls, AWD_LSTM, config=config, pretrained=False, **trn_args)
         #load pretrained finetuned model
         self.learn.load_encoder("./LM")
-
         #train unfrozen
 #         with GPUMemTrace():
         self.learn.freeze_to(-1)
@@ -154,7 +158,9 @@ class ULMfit_model():
         self.learn.freeze_to(-3)
         self.learn.fit_one_cycle(1, slice(5e-3 / (2.6 ** 4), 5e-3), moms=(0.8, 0.7))
         self.learn.unfreeze()
-        self.learn.fit_one_cycle(3, slice(1e-3 / (2.6 ** 4), 1e-3), moms=(0.8, 0.7),
+        num_epoch = 1000
+        print(f'Max fitting loop is {num_epoch} ==> EarlyStopping will automatically terminate the training')
+        self.learn.fit_one_cycle(num_epoch, slice(1e-3 / (2.6 ** 4), 1e-3), moms=(0.8, 0.7),
                            callbacks=[SaveModelCallback(self.learn, every='improvement', monitor='accuracy', name='bestmodel'),
                                       EarlyStoppingCallback(self.learn, min_delta=0.0, patience=5)])
 
