@@ -2,6 +2,7 @@ from fastai.text import *
 from fastai.callbacks import CSVLogger, SaveModelCallback
 from fastai.callbacks.tracker import TrackerCallback, EarlyStoppingCallback
 from fastai.utils.mem import GPUMemTrace
+from fastai.basic_train import load_learner
 
 from pythainlp.ulmfit import *
 from sklearn.metrics import confusion_matrix, f1_score
@@ -42,39 +43,17 @@ class SaveEncoderCallback(TrackerCallback):
                 
 class ULMfit_for_predict():
     def __init__(self,
-                 model_path: '(str) locate to the folder dont specify in any extension'):
-        data_lm = load_data(model_path, "language_model_data.pkl")
-        data_lm.sanity_check()
-        cur_path = os.getcwd()
-        os.chdir(model_path)
-        tr = pd.read_csv('train.csv')
-        te = pd.read_csv('test.csv')
-        os.chdir(cur_path)
-        #classification data
-        tt = Tokenizer(tok_func=ThaiTokenizer, lang="th", pre_rules=pre_rules_th, post_rules=post_rules_th)
-        processor = [TokenizeProcessor(tokenizer=tt, chunksize=10000, mark_fields=False),
-                    NumericalizeProcessor(vocab=data_lm.vocab, max_vocab=60000, min_freq=20)]
-
-        data_cls = (ItemLists(model_path,train=TextList.from_df(tr, model_path, cols=["texts"], processor=processor),
-                             valid=TextList.from_df(te, model_path, cols=["texts"], processor=processor))
-            .label_from_df("labels")
-            .databunch(bs=50)
-            )
-        data_cls.sanity_check()
-#         print(len(data_cls.vocab.itos))
-
-        config = dict(emb_sz=400, n_hid=1550, n_layers=4, pad_token=1, qrnn=False,
-                     output_p=0.4, hidden_p=0.2, input_p=0.6, embed_p=0.1, weight_p=0.5)
-        trn_args = dict(bptt=70, drop_mult=0.7, alpha=2, beta=1, max_len=500)
-
-        self.learn = text_classifier_learner(data_cls, AWD_LSTM, config=config, pretrained=False, **trn_args)
-        self.learn.load("bestmodel")
+                 model_folder_name: '(str) locate to the folder dont specify in any extension',
+                 model_name: '(str) the model name in .pkl extension',
+                 min_char_len: '(int) ignore input if its length is less than this number'):
+        self.learn = load_learner(model_folder_name, model_name)
         self.classes = self.learn.data.train_ds.classes
+        self.min_char_len = min_char_len
     def predict(self,
                 raw_text: '(str) the raw string to be predicted'):
         dictionary = {}
-        if len(raw_text) < 15:
-            dictionary['Error'] = 'the length is too short (< 15 characters)'
+        if len(raw_text) < self.min_char_len:
+            dictionary['Error'] = f'the length is too short (< {self.min_char_len} characters)'
             return dictionary
         x = self.learn.predict(raw_text)[2].numpy()
         for ind, tmp_class in enumerate(self.classes):
@@ -121,7 +100,7 @@ class ULMfit_model():
         num_epoch = 1000
         print(f'Max fitting loop is {num_epoch} ==> EarlyStopping will automatically terminate the training')
         self.learn.fit_one_cycle(num_epoch, 1e-3, moms=(0.8, 0.7),
-                                 callbacks=[SaveEncoderCallback(self.learn, every='improvement', monitor='accuracy', name='LM'),
+                                 callbacks=[SaveEncoderCallback(self.learn, every='improvement', monitor='valid_loss', name='LM'),
                                             EarlyStoppingCallback(self.learn, min_delta=0.0, patience=5)])
     def fit_classifier(self,
                        tr: '(pd.DataFrame) containing the "texts" and "labels" columns which contain string of the raw text and its labels',
@@ -190,4 +169,7 @@ class ULMfit_model():
         f1s = f1_score(probs_df.category, probs_df.preds, average=None)
         print(f'f1-scores for each class: {f1s}')
         print(f'Weighted avg f1-score: {f1_score(probs_df.category, probs_df.preds, average="weighted")}, Unweighted avf f1-score: {np.mean(f1s)}')
+    def export_classifier(self,
+                          model_name: '(str) the model name (.pkl extension). It will be stored in the model_path'= 'export.pkl'):
+        self.learn.export(model_name)
         
