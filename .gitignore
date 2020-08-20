@@ -12,3 +12,5 @@ text_classification_v*
 text_classification
 sequence_prediction
 *.json
+*.egg-info
+*.DS_Store
